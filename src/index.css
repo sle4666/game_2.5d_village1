@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  margin: 0;
+  overflow: hidden;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Subtle parchment texture for menus */
+.parchment-bg {
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(120, 90, 50, 0.12), transparent 60%),
+    radial-gradient(ellipse at 80% 90%, rgba(80, 60, 30, 0.10), transparent 55%),
+    linear-gradient(160deg, #1a1410 0%, #2a2018 40%, #1e1812 100%);
+}
+
+.wood-panel {
+  background:
+    linear-gradient(180deg, rgba(60, 44, 28, 0.96), rgba(40, 30, 20, 0.96));
+  border: 1px solid rgba(140, 110, 70, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(200, 160, 100, 0.15),
+    0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.btn-rune {
+  background: linear-gradient(180deg, #3a2c1c, #2a2014);
+  border: 1px solid rgba(180, 140, 80, 0.4);
+  color: #e8d4a8;
+  transition: all 0.2s ease;
+}
+.btn-rune:hover {
+  background: linear-gradient(180deg, #4a3826, #382a18);
+  border-color: rgba(220, 180, 110, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+.btn-rune:active {
+  transform: translateY(0);
+}
+
+.canvas-cursor-build {
+  cursor: crosshair;
+}
+
+@keyframes float-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-float-in {
+  animation: float-in 0.5s ease-out both;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+.animate-flicker {
+  animation: flicker 3s ease-in-out infinite;
+}
+
+/* thin scrollbar for log */
+.thin-scroll::-webkit-scrollbar { width: 6px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: rgba(180,140,80,0.3); border-radius: 3px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
