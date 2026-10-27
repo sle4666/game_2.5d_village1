@@ -45,10 +45,18 @@ export function getMapSeed(): number {
   return mapSeed;
 }
 
-// Simple hash-based pseudo-random from coordinates + seed.
+// Deterministic integer hash PRNG. Stable across frames — no floating-point
+// precision drift like Math.sin-based hashes. Returns 0..1.
+export function hashRand(x: number, y: number, seed: number): number {
+  let h = (x * 374761393 + y * 668265263 + seed * 1442695040) | 0;
+  h = ((h ^ (h >>> 13)) * 1274126177) | 0;
+  h = h ^ (h >>> 16);
+  return (h >>> 0) / 4294967296;
+}
+
+// Convenience: uses the current module-level mapSeed.
 function seededRand(x: number, y: number): number {
-  const n = Math.sin((x + mapSeed * 0.37) * 12.9898 + (y + mapSeed * 0.53) * 78.233) * 43758.5453;
-  return n - Math.floor(n);
+  return hashRand(x, y, mapSeed);
 }
 
 // Superposition of sinusoids: rolling hills + a central ridge + lowlands.

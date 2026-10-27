@@ -5,22 +5,9 @@ interface ResourceBarProps {
   resources: Record<ResourceId, number>;
 }
 
-const ICONS: Record<string, string> = {
-  wood: '🪵',
-  stone: '🪨',
-  ore: '⛏',
-  food: '🍞',
-  skins: '🐾',
-  faith: '✨',
-  gold: '🪙',
-  workers: '👤',
-};
-
-// We avoid emoji in user-facing text, but small resource glyphs in a HUD are
-// acceptable as compact iconography. Use simple text labels instead.
 export default function ResourceBar({ resources }: ResourceBarProps) {
   return (
-    <div className="flex items-center gap-1 flex-wrap">
+    <div className="wood-panel rounded-xl px-3 py-2 flex items-center gap-2 flex-row flex-wrap justify-center max-w-[90vw]">
       {RESOURCE_ORDER.map((id) => {
         const info = RESOURCES[id];
         const v = Math.floor(resources[id] ?? 0);
@@ -28,8 +15,8 @@ export default function ResourceBar({ resources }: ResourceBarProps) {
         return (
           <div
             key={id}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md ${
-              low ? 'bg-red-900/40 ring-1 ring-red-500/40' : 'bg-black/40'
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
+              low ? 'bg-red-900/40 ring-1 ring-red-500/40' : 'bg-black/30'
             }`}
             title={info.name}
           >
@@ -40,7 +27,7 @@ export default function ResourceBar({ resources }: ResourceBarProps) {
             <span className="text-stone-200 tabular-nums text-sm font-medium min-w-[2ch] text-right">
               {v}
             </span>
-            <span className="text-stone-500 text-xs hidden sm:inline">{info.name}</span>
+            <span className="text-stone-500 text-xs hidden md:inline">{info.name}</span>
           </div>
         );
       })}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Home, Pickaxe, Hammer, Warehouse, Sparkles, Shield, X, TreePine } from 'lucide-react';
+import { Home, Pickaxe, Hammer, Warehouse, Sparkles, Shield, X, TreePine, ChevronDown, ChevronUp } from 'lucide-react';
 import { BUILDINGS, BUILD_CATEGORIES } from '@/game/constants';
 import type { BuildingType, BuildingTypeId } from '@/game/types';
 import type { ResourceId } from '@/game/types';
@@ -31,7 +31,9 @@ export default function BuildMenu({ resources, selected, onSelect }: BuildMenuPr
           <Hammer size={18} className="text-amber-400/80" />
           Строительство
         </span>
-        <span className="text-stone-400 text-xs">{open ? '▾' : '▸'}</span>
+        <span className="text-stone-400">
+          {open ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </span>
       </button>
 
       {open && (

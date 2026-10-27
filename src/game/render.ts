@@ -7,7 +7,7 @@ import {
   BUILDINGS,
   CLASSES,
 } from './constants';
-import { tileDecoration, tileHeight, tileToScreen, isWater, type CameraView } from './iso';
+import { tileDecoration, tileHeight, tileToScreen, isWater, hashRand, type CameraView } from './iso';
 import type { GameState } from './engine';
 import type { Agent, BuildingType, PlacedBuilding, Season } from './types';
 
@@ -170,8 +170,8 @@ function drawTile(
     return;
   }
 
-  // base ground color with slight per-tile variation
-  const variance = (Math.sin(x * 3.1 + y * 1.7) + 1) * 0.5;
+  // base ground color with slight per-tile variation (seeded, stable)
+  const variance = hashRand(x, y, state.mapSeed);
   let base = sinfo.ground;
   if (state.season === 'winter') {
     base = `rgb(${200 + variance * 20},${210 + variance * 18},${220 + variance * 16})`;

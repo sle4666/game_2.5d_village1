@@ -356,11 +356,6 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
         <TimeControls speed={uiSpeed} onSpeedChange={changeSpeed} />
       </div>
 
-      {/* Below time controls (top-right): resources */}
-      <div className="absolute top-16 right-3 pointer-events-auto">
-        <ResourceBar resources={uiResources} />
-      </div>
-
       {/* Left side: build menu + society */}
       <div className="absolute left-3 top-20 pointer-events-auto flex flex-col gap-3">
         <BuildMenu
@@ -384,19 +379,23 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
 
       {/* Save confirmation toast */}
       {saveMessage && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-none z-30">
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-none z-30">
           <div className="wood-panel rounded-lg px-4 py-2 text-amber-100 text-sm animate-float-in">
             {saveMessage}
           </div>
         </div>
       )}
 
-      {/* Bottom hint */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none">
-        <div className="wood-panel rounded-lg px-4 py-1.5 text-stone-400 text-xs flex gap-4">
+      {/* Bottom-center: resource bar */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto z-20">
+        <ResourceBar resources={uiResources} />
+      </div>
+
+      {/* Bottom-left: controls hint */}
+      <div className="absolute bottom-4 left-3 pointer-events-none">
+        <div className="wood-panel rounded-lg px-3 py-1.5 text-stone-500 text-[11px] flex gap-3">
           <span>WASD — камера</span>
           <span>Колесо — зум</span>
-          <span>ПКМ/Esc — отмена</span>
           <span>Пробел — пауза</span>
         </div>
       </div>
