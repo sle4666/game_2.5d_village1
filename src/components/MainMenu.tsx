@@ -44,23 +44,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
         {Array.from({ length: 18 }).map((_, i) => (
           <div
             key={i}
-            className="absolute rounded-full bg-amber-400/20 animate-flicker"
-            style={{
-              width: 2 + (i % 3),
-              height: 2 + (i % 3),
-              left: `${(i * 53) % 100}%`,
-              top: `${(i * 37) % 100}%`,
-              animationDelay: `${(i % 5) * 0.6}s`,
-            }}
-          />
-        ))}
-      </div>
-
-      <div className="relative z-10 w-full max-w-2xl px-6">
-        <div className="text-center mb-8 animate-float-in">
-          <div className="flex items-center justify-center gap-3 text-amber-500/70 mb-2">
-            <Trees size={28} />
-            <span className="tracking-[0.4em] text-xs uppercase">Стратегия выживания</span>
+          
             <Trees size={28} />
           </div>
           <h1 className="font-display text-5xl md:text-6xl font-bold text-amber-100 leading-tight drop-shadow-lg">
