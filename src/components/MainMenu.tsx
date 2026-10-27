@@ -125,11 +125,11 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
                 />
                 <SliderRow
                   icon={Waves}
-                  label="Извилистость рек"
+                  label="Количество рек"
                   value={rivers}
                   onChange={setRivers}
-                  leftLabel="Прямые"
-                  rightLabel="Извилистые"
+                  leftLabel="Мало"
+                  rightLabel="Много"
                 />
               </div>
 

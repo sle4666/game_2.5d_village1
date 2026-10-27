@@ -65,7 +65,7 @@ export interface GameState {
   masterPool: { classId: CitizenClass }[];
   guestCooldown: number;
   mapSeed: number;
-  terrain: TerrainConfigType;
+  terrain: TerrainConfig;
 }
 
 function emptyGrid<T>(value: T): T[][] {
@@ -93,7 +93,7 @@ export function createGame(
   terrain?: TerrainConfig
 ): GameState {
   const difficulty = DIFFICULTIES[difficultyId as keyof typeof DIFFICULTIES] ?? DIFFICULTIES.normal;
-  const terrainCfg: TerrainConfigType = terrain ?? { hills: 0.5, rivers: 0.5 };
+  const terrainCfg: TerrainConfig = terrain ?? { hills: 0.5, rivers: 0.5 };
   const resources: Record<ResourceId, number> = {
     wood: 0, stone: 0, ore: 0, food: 0, skins: 0, faith: 0, gold: 0, workers: 0,
   };
