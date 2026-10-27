@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Trees, Scroll, Settings, LogOut, Flame, Swords, Shield } from 'lucide-react';
 import type { DifficultyId } from '@/game/types';
 import { DIFFICULTIES } from '@/game/constants';
 import SettingsPanel from './SettingsPanel';
 import { initAudio } from '@/game/AudioSystem';
+import { hasSave } from '@/game/storage';
 
 interface MainMenuProps {
   onStart: (difficulty: DifficultyId) => void;
+  onLoad: () => void;
 }
 
 const DIFFICULTY_ICONS: Record<DifficultyId, typeof Trees> = {
@@ -15,14 +17,18 @@ const DIFFICULTY_ICONS: Record<DifficultyId, typeof Trees> = {
   hard: Swords,
 };
 
-export default function MainMenu({ onStart }: MainMenuProps) {
+export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
   const [showDifficulty, setShowDifficulty] = useState(false);
   const [selected, setSelected] = useState<DifficultyId | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [canLoad, setCanLoad] = useState(false);
+
+  useEffect(() => {
+    setCanLoad(hasSave());
+  }, []);
 
   return (
     <div className="parchment-bg min-h-screen w-full flex items-center justify-center relative overflow-hidden">
-      {/* Decorative ambient embers */}
       <div className="absolute inset-0 pointer-events-none">
         {Array.from({ length: 18 }).map((_, i) => (
           <div
@@ -40,7 +46,6 @@ export default function MainMenu({ onStart }: MainMenuProps) {
       </div>
 
       <div className="relative z-10 w-full max-w-2xl px-6">
-        {/* Title */}
         <div className="text-center mb-10 animate-float-in">
           <div className="flex items-center justify-center gap-3 text-amber-500/70 mb-2">
             <Trees size={28} />
@@ -59,12 +64,11 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           </p>
         </div>
 
-        {/* Panel */}
         <div className="wood-panel rounded-xl p-6 animate-float-in" style={{ animationDelay: '0.1s' }}>
           {!showDifficulty ? (
             <div className="flex flex-col gap-3">
               <MenuButton icon={Flame} label="Начать игру" onClick={() => setShowDifficulty(true)} primary />
-              <MenuButton icon={Scroll} label="Загрузить игру" onClick={() => {}} disabled />
+              <MenuButton icon={Scroll} label="Загрузить игру" onClick={onLoad} disabled={!canLoad} />
               <MenuButton icon={Settings} label="Настройки" onClick={() => { initAudio(); setShowSettings(true); }} />
               <MenuButton icon={LogOut} label="Выйти" onClick={() => window.close()} />
             </div>

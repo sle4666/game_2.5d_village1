@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { X, Music, Volume2 } from 'lucide-react';
+import { X, Music, Volume2, Zap } from 'lucide-react';
 import {
   getMusicVolume,
   getAmbientVolume,
+  getSfxVolume,
   setMusicVolume,
   setAmbientVolume,
+  setSfxVolume,
 } from '@/game/AudioSystem';
 
 interface SettingsPanelProps {
@@ -15,6 +17,7 @@ interface SettingsPanelProps {
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [music, setMusic] = useState(getMusicVolume());
   const [ambient, setAmbient] = useState(getAmbientVolume());
+  const [sfx, setSfx] = useState(getSfxVolume());
 
   if (!open) return null;
 
@@ -32,53 +35,24 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         </div>
 
         <div className="flex flex-col gap-5">
-          {/* Music volume */}
-          <div>
-            <div className="flex items-center gap-2 text-amber-100 text-sm mb-2">
-              <Music size={15} className="text-amber-400/70" />
-              Громкость музыки
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={music}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                setMusic(v);
-                setMusicVolume(v);
-              }}
-              className="w-full accent-amber-500"
-            />
-            <div className="text-stone-500 text-[10px] mt-1">
-              {Math.round(music * 100)}%
-            </div>
-          </div>
-
-          {/* Ambient/SFX volume */}
-          <div>
-            <div className="flex items-center gap-2 text-amber-100 text-sm mb-2">
-              <Volume2 size={15} className="text-amber-400/70" />
-              Громкость звуков и эмбиента
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={ambient}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                setAmbient(v);
-                setAmbientVolume(v);
-              }}
-              className="w-full accent-amber-500"
-            />
-            <div className="text-stone-500 text-[10px] mt-1">
-              {Math.round(ambient * 100)}%
-            </div>
-          </div>
+          <Slider
+            icon={Music}
+            label="Громкость музыки"
+            value={music}
+            onChange={(v) => { setMusic(v); setMusicVolume(v); }}
+          />
+          <Slider
+            icon={Volume2}
+            label="Громкость эмбиента"
+            value={ambient}
+            onChange={(v) => { setAmbient(v); setAmbientVolume(v); }}
+          />
+          <Slider
+            icon={Zap}
+            label="Громкость звуков"
+            value={sfx}
+            onChange={(v) => { setSfx(v); setSfxVolume(v); }}
+          />
         </div>
 
         <button
@@ -87,6 +61,39 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         >
           Закрыть
         </button>
+      </div>
+    </div>
+  );
+}
+
+function Slider({
+  icon: Icon,
+  label,
+  value,
+  onChange,
+}: {
+  icon: typeof Music;
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-amber-100 text-sm mb-2">
+        <Icon size={15} className="text-amber-400/70" />
+        {label}
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-amber-500"
+      />
+      <div className="text-stone-500 text-[10px] mt-1">
+        {Math.round(value * 100)}%
       </div>
     </div>
   );

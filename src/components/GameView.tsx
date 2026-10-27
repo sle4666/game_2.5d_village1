@@ -1,32 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GRID_D, GRID_W, TILE_H, TILE_W, BUILDINGS, TICK_MS } from '@/game/constants';
+import { Menu } from 'lucide-react';
+import { GRID_D, GRID_W, BUILDINGS, TICK_MS, SEASON_ORDER } from '@/game/constants';
 import { screenToTile, tileToScreen, type CameraView } from '@/game/iso';
-import { canPlace, createGame, placeBuilding, placeBridgeSpan, tick, seedAgents, startTraining, type GameState } from '@/game/engine';
+import {
+  canPlace, createGame, placeBuilding, tick, seedAgents, startTraining,
+  setSoundCallback, type GameState,
+} from '@/game/engine';
 import { render } from '@/game/render';
 import type { CitizenClass, BuildingTypeId, DifficultyId } from '@/game/types';
-import { initAudio, startAmbient, startMusic, playSound } from '@/game/AudioSystem';
+import {
+  initAudio, startAmbient, startMusic, switchAmbient, playSound,
+  type SoundEvent,
+} from '@/game/AudioSystem';
+import { saveGame, loadGame } from '@/game/storage';
 import ResourceBar from './ResourceBar';
 import BuildMenu from './BuildMenu';
-import TopBar from './TopBar';
-import EventLog from './EventLog';
+import TimeControls from './TimeControls';
+import AdvisorBar from './AdvisorBar';
 import SocietyPanel from './SocietyPanel';
 import GuestsPanel from './GuestsPanel';
 import SettingsPanel from './SettingsPanel';
+import PauseMenu from './PauseMenu';
 
 interface GameViewProps {
   difficulty: DifficultyId;
   onExit: () => void;
+  loadedState?: GameState | null;
 }
 
-export default function GameView({ difficulty, onExit }: GameViewProps) {
+export default function GameView({ difficulty, onExit, loadedState }: GameViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef<GameState>(createGame(difficulty));
+  const stateRef = useRef<GameState>(loadedState ?? createGame(difficulty));
   const viewRef = useRef<CameraView>({ x: 0, y: 0, zoom: 1 });
   const keysRef = useRef<Set<string>>(new Set());
   const mouseRef = useRef<{ x: number; y: number; down: boolean; dragStartX: number; dragStartY: number; dragging: boolean }>({
     x: 0, y: 0, down: false, dragStartX: 0, dragStartY: 0, dragging: false,
   });
   const buildTypeRef = useRef<BuildingTypeId | null>(null);
+  const lastSeasonRef = useRef<string>(stateRef.current.season);
   const [, forceRender] = useState(0);
   const [uiResources, setUiResources] = useState(stateRef.current.resources);
   const [uiSeason, setUiSeason] = useState(stateRef.current.season);
@@ -43,7 +54,9 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
   const [buildType, setBuildType] = useState<BuildingTypeId | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameOverReason, setGameOverReason] = useState('');
+  const [showPause, setShowPause] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -65,7 +78,24 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
     }
   }, []);
 
-  // center camera initially
+  // Initialize audio + sound callback bridge.
+  useEffect(() => {
+    initAudio();
+    startAmbient(stateRef.current.season);
+    startMusic();
+
+    // Bridge engine sound events to AudioSystem.
+    setSoundCallback((event: SoundEvent) => {
+      if (event === 'winterComes') {
+        switchAmbient('winter');
+      }
+      playSound(event);
+    });
+
+    return () => { setSoundCallback(null); };
+  }, []);
+
+  // Center camera initially.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -77,10 +107,6 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       y: canvas.height / 2 - p.y,
       zoom: 1,
     };
-    // Start ambient sounds and music.
-    initAudio();
-    startAmbient();
-    startMusic();
   }, []);
 
   // Game loop
@@ -94,7 +120,6 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
         return;
       }
 
-      // camera movement from keys
       const view = viewRef.current;
       const keys = keysRef.current;
       const moveSpeed = 8 / view.zoom;
@@ -103,22 +128,25 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       if (keys.has('a') || keys.has('arrowleft')) view.x += moveSpeed;
       if (keys.has('d') || keys.has('arrowright')) view.x -= moveSpeed;
 
-      // game tick
       const s = stateRef.current;
       if (!s.gameOver && s.speed > 0) {
         const interval = TICK_MS / s.speed;
         if (now - lastTick >= interval) {
-          // seed agents when first house is built
           if (s.agents.length === 0 && s.buildings.some((b) => b.built && BUILDINGS[b.typeId].housing)) {
             seedAgents(s);
           }
           tick(s);
           lastTick = now;
           syncUi();
+
+          // Switch ambient when season changes.
+          if (s.season !== lastSeasonRef.current) {
+            lastSeasonRef.current = s.season;
+            switchAmbient(s.season);
+          }
         }
       }
 
-      // compute hover tile
       const rect = canvas.getBoundingClientRect();
       const mx = (mouseRef.current.x - rect.left) * (canvas.width / rect.width);
       const my = (mouseRef.current.y - rect.top) * (canvas.height / rect.height);
@@ -132,7 +160,6 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
         ? canPlace(s, ghostType, hover.x, hover.y)
         : false;
 
-      // render
       const ctx = canvas.getContext('2d');
       if (ctx) {
         render(
@@ -156,7 +183,7 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
     return () => cancelAnimationFrame(raf);
   }, [syncUi]);
 
-  // Resize canvas to fill
+  // Resize canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -170,8 +197,6 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       canvas.style.height = parent.clientHeight + 'px';
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // re-adjust: canvas.width is physical; we draw in CSS px via setTransform.
-      // But our render uses canvas.width directly. Compensate by scaling view.
     };
     resize();
     window.addEventListener('resize', resize);
@@ -184,8 +209,12 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       const k = e.key.toLowerCase();
       keysRef.current.add(k);
       if (k === 'escape') {
-        setBuildType(null);
-        buildTypeRef.current = null;
+        if (showPause) {
+          setShowPause(false);
+        } else {
+          setBuildType(null);
+          buildTypeRef.current = null;
+        }
       }
       if (k === ' ') {
         e.preventDefault();
@@ -201,15 +230,13 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
-  }, [syncUi]);
+  }, [syncUi, showPause]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const view = viewRef.current;
     const factor = e.deltaY < 0 ? 1.1 : 0.91;
-    // Hard clamp: min 0.4 (far), max 1.6 (close). Prevents texture clipping.
     const newZoom = Math.max(0.4, Math.min(1.6, view.zoom * factor));
     if (newZoom === view.zoom) return;
-    // zoom toward cursor
     const canvas = canvasRef.current;
     if (canvas) {
       const rect = canvas.getBoundingClientRect();
@@ -259,20 +286,11 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
     const t = screenToTile(mx, my, viewRef.current);
     if (t.tileX < 0 || t.tileY < 0 || t.tileX >= GRID_W || t.tileY >= GRID_D) return;
     const s = stateRef.current;
-    // Bridges use span placement: one click fills the whole river cross-section.
-    if (bt === 'bridge') {
-      const placed = placeBridgeSpan(s, t.tileX, t.tileY);
-      if (placed.length > 0) {
-        playSound('build');
-        syncUi();
-      }
-      return;
-    }
+    // Bridges: single-tile placement on any water tile.
     const placed = placeBuilding(s, bt, t.tileX, t.tileY);
     if (placed) {
-      playSound('build');
+      playSound('placeBuilding');
       syncUi();
-      // keep build mode active for rapid placement
     }
   }, [syncUi]);
 
@@ -291,6 +309,12 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
     syncUi();
   }, [syncUi]);
 
+  const handleSave = useCallback(() => {
+    const ok = saveGame(stateRef.current);
+    setSaveMessage(ok ? 'Игра сохранена!' : 'Ошибка сохранения!');
+    setTimeout(() => setSaveMessage(''), 2000);
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-stone-900 select-none">
       <canvas
@@ -304,28 +328,41 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
         onContextMenu={(e) => { e.preventDefault(); selectBuild(null); }}
       />
 
-      {/* Top HUD */}
-      <div className="absolute top-3 left-3 right-3 flex items-start gap-3 pointer-events-none">
-        <div className="pointer-events-auto">
-          <TopBar
-            season={uiSeason}
-            day={uiDay}
-            totalDays={uiTotalDays}
-            speed={uiSpeed}
-            population={uiPop}
-            housingUsed={uiHousing}
-            onSpeedChange={changeSpeed}
-            onMenu={onExit}
-            onSettings={() => setShowSettings(true)}
-          />
-        </div>
-        <div className="pointer-events-auto flex-1 flex justify-end">
-          <ResourceBar resources={uiResources} />
-        </div>
+      {/* === NEW HUD LAYOUT === */}
+
+      {/* Top-left: hamburger menu button */}
+      <div className="absolute top-3 left-3 pointer-events-auto">
+        <button
+          onClick={() => setShowPause(true)}
+          title="Меню"
+          className="w-11 h-11 rounded-full wood-panel flex items-center justify-center text-amber-100 hover:ring-2 hover:ring-amber-400/40 transition-all"
+        >
+          <Menu size={20} />
+        </button>
       </div>
 
-      {/* Left: build menu */}
-      <div className="absolute left-3 top-24 pointer-events-auto flex flex-col gap-3">
+      {/* Top-center: Advisor bar with season/date + last log message */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-auto">
+        <AdvisorBar
+          season={uiSeason}
+          day={uiDay}
+          totalDays={uiTotalDays}
+          log={uiLog}
+        />
+      </div>
+
+      {/* Top-right: time controls only */}
+      <div className="absolute top-3 right-3 pointer-events-auto">
+        <TimeControls speed={uiSpeed} onSpeedChange={changeSpeed} />
+      </div>
+
+      {/* Below time controls (top-right): resources */}
+      <div className="absolute top-16 right-3 pointer-events-auto">
+        <ResourceBar resources={uiResources} />
+      </div>
+
+      {/* Left side: build menu + society */}
+      <div className="absolute left-3 top-20 pointer-events-auto flex flex-col gap-3">
         <BuildMenu
           resources={uiResources}
           selected={buildType}
@@ -340,11 +377,19 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
         />
       </div>
 
-      {/* Right: event log + guests */}
-      <div className="absolute right-3 top-24 pointer-events-auto flex flex-col gap-3">
+      {/* Right side: guests panel (if any) */}
+      <div className="absolute right-3 top-32 pointer-events-auto flex flex-col gap-3">
         {uiGuests.length > 0 && <GuestsPanel guests={uiGuests} />}
-        <EventLog log={uiLog} />
       </div>
+
+      {/* Save confirmation toast */}
+      {saveMessage && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-none z-30">
+          <div className="wood-panel rounded-lg px-4 py-2 text-amber-100 text-sm animate-float-in">
+            {saveMessage}
+          </div>
+        </div>
+      )}
 
       {/* Bottom hint */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none">
@@ -356,11 +401,21 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
         </div>
       </div>
 
-      {/* Game over overlay */}
+      {/* Pause menu */}
+      <PauseMenu
+        open={showPause}
+        onClose={() => setShowPause(false)}
+        onSettings={() => { setShowPause(false); setShowSettings(true); }}
+        onSave={handleSave}
+        onExit={onExit}
+      />
+
+      {/* Settings panel */}
       {showSettings && (
         <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
       )}
 
+      {/* Game over overlay */}
       {gameOver && (
         <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="wood-panel rounded-xl p-8 max-w-md text-center animate-float-in">

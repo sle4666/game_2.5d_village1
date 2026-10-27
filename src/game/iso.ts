@@ -31,30 +31,52 @@ export function inBounds(tileX: number, tileY: number): boolean {
   return tileX >= 0 && tileY >= 0 && tileX < GRID_W && tileY < GRID_D;
 }
 
+// --- Seeded procedural terrain ---
+// All terrain functions use mapSeed as an offset so each new game
+// produces a different river, hills, and tree layout.
+
+let mapSeed = 0;
+
+export function setMapSeed(seed: number): void {
+  mapSeed = seed;
+}
+
+export function getMapSeed(): number {
+  return mapSeed;
+}
+
+// Simple hash-based pseudo-random from coordinates + seed.
+function seededRand(x: number, y: number): number {
+  const n = Math.sin((x + mapSeed * 0.37) * 12.9898 + (y + mapSeed * 0.53) * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+}
+
 // Superposition of sinusoids: rolling hills + a central ridge + lowlands.
+// All sinusoids are offset by mapSeed so terrain varies per game.
 export function tileHeight(tileX: number, tileY: number): number {
   const nx = tileX / GRID_W - 0.5;
   const ny = tileY / GRID_D - 0.5;
+  const s = mapSeed * 0.1;
   const h =
-    Math.sin(tileX * 0.42) * 0.6 +
-    Math.cos(tileY * 0.37) * 0.5 +
-    Math.sin((tileX + tileY) * 0.25) * 0.8 +
-    Math.sin(tileX * 0.13) * 1.4 +
-    Math.cos(tileY * 0.19) * 1.2 +
+    Math.sin((tileX + s) * 0.42) * 0.6 +
+    Math.cos((tileY + s * 1.3) * 0.37) * 0.5 +
+    Math.sin((tileX + tileY + s) * 0.25) * 0.8 +
+    Math.sin((tileX + s * 2) * 0.13) * 1.4 +
+    Math.cos((tileY + s * 0.7) * 0.19) * 1.2 +
     (1 - Math.sqrt(nx * nx + ny * ny) * 2) * 1.6;
   return Math.max(0, h * 7);
 }
 
 // A winding river: a sine-displaced vertical band crossing the map.
-// The river centerline follows x = riverCenter(y) with some width.
-const RIVER_BASE_X = GRID_W * 0.45;
+// The river base position and waviness are offset by mapSeed.
 const RIVER_WIDTH = 4.5;
 
 export function riverCenterX(tileY: number): number {
+  const base = GRID_W * 0.3 + (mapSeed % (GRID_W * 0.4));
   return (
-    RIVER_BASE_X +
-    Math.sin(tileY * 0.18) * 10 +
-    Math.cos(tileY * 0.07) * 6
+    base +
+    Math.sin((tileY + mapSeed * 0.3) * 0.18) * 10 +
+    Math.cos((tileY + mapSeed * 0.15) * 0.07) * 6
   );
 }
 
@@ -64,12 +86,11 @@ export function isWater(tileX: number, tileY: number): boolean {
   return dist < RIVER_WIDTH / 2;
 }
 
-// Trees are scarce: low probability, clustered near the river and in lowlands.
+// Trees and rocks: seeded random, clustered near the river and in lowlands.
 export function tileDecoration(tileX: number, tileY: number): 'tree' | 'rock' | null {
   if (tileX < 1 || tileY < 1 || tileX > GRID_W - 2 || tileY > GRID_D - 2) return null;
   if (isWater(tileX, tileY)) return null;
-  const n = Math.sin(tileX * 12.9898 + tileY * 78.233) * 43758.5453;
-  const v = n - Math.floor(n);
+  const v = seededRand(tileX, tileY);
   const distFromCenter = Math.abs(tileX - GRID_W / 2) + Math.abs(tileY - GRID_D / 2);
   if (distFromCenter < 6) return null;
 
@@ -87,8 +108,6 @@ export function tileDecoration(tileX: number, tileY: number): 'tree' | 'rock' | 
 }
 
 // --- Pathfinding (A* on grid) ---
-// A tile is passable if it's in bounds, not water (unless a bridge occupies it),
-// and not occupied by a building. Bridges are passed in as a set of "x,y" keys.
 export function isPassable(
   tileX: number,
   tileY: number,
@@ -109,8 +128,6 @@ interface PathNode {
   parent: PathNode | null;
 }
 
-// A* pathfinding. Returns array of {x,y} tiles from start (exclusive) to goal
-// (inclusive), or null if no path. Uses Manhattan distance heuristic.
 export function findPath(
   startX: number,
   startY: number,
@@ -131,7 +148,6 @@ export function findPath(
 
   while (open.length > 0 && iterations < MAX_ITER) {
     iterations++;
-    // pick lowest f
     let bestIdx = 0;
     for (let i = 1; i < open.length; i++) {
       if (open[i].f < open[bestIdx].f) bestIdx = i;
@@ -142,7 +158,6 @@ export function findPath(
     closed.add(ck);
 
     if (current.x === goalX && current.y === goalY) {
-      // reconstruct path
       const path: { x: number; y: number }[] = [];
       let n: PathNode | null = current;
       while (n && n.parent) {
@@ -152,14 +167,12 @@ export function findPath(
       return path;
     }
 
-    // 4-directional neighbors
     const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
     for (const [dx, dy] of dirs) {
       const nx = current.x + dx;
       const ny = current.y + dy;
       const nk = key(nx, ny);
       if (closed.has(nk)) continue;
-      // goal is always reachable even if occupied (the target building)
       const isGoal = nx === goalX && ny === goalY;
       if (!isPassable(nx, ny, bridgeTiles)) continue;
       if (!isGoal && occupied[nx] && occupied[nx][ny]) continue;
@@ -172,7 +185,6 @@ export function findPath(
   return null;
 }
 
-// Helper: collect all built bridge tiles from the game's buildings.
 export function collectBridgeTiles(
   bridges: { tileX: number; tileY: number; built: boolean }[]
 ): Set<string> {
