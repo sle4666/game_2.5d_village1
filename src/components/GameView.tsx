@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Menu } from 'lucide-react';
-import { GRID_D, GRID_W, BUILDINGS, TICK_MS, SEASON_ORDER } from '@/game/constants';
+import { Menu, Hammer, Users, Volume2, VolumeX, Mountain, Waves } from 'lucide-react';
+import { GRID_D, GRID_W, BUILDINGS, TICK_MS } from '@/game/constants';
 import { screenToTile, tileToScreen, type CameraView } from '@/game/iso';
 import {
   canPlace, createGame, placeBuilding, tick, seedAgents, startTraining,
   setSoundCallback, type GameState,
 } from '@/game/engine';
 import { render } from '@/game/render';
-import type { CitizenClass, BuildingTypeId, DifficultyId } from '@/game/types';
+import type { CitizenClass, BuildingTypeId, DifficultyId, TerrainConfig } from '@/game/types';
 import {
   initAudio, startAmbient, startMusic, switchAmbient, playSound,
-  type SoundEvent,
+  toggleMute, isMuted, type SoundEvent,
 } from '@/game/AudioSystem';
-import { saveGame, loadGame } from '@/game/storage';
+import { saveGame } from '@/game/storage';
 import ResourceBar from './ResourceBar';
 import BuildMenu from './BuildMenu';
 import TimeControls from './TimeControls';
@@ -24,42 +24,50 @@ import PauseMenu from './PauseMenu';
 
 interface GameViewProps {
   difficulty: DifficultyId;
+  terrain: TerrainConfig;
   onExit: () => void;
   loadedState?: GameState | null;
 }
 
-export default function GameView({ difficulty, onExit, loadedState }: GameViewProps) {
+type RibbonTab = 'build' | 'society' | null;
+
+export default function GameView({ difficulty, terrain, onExit, loadedState }: GameViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef<GameState>(loadedState ?? createGame(difficulty));
+  // CRITICAL: lazy init so createGame runs exactly ONCE, not on every render.
+  // This was the root cause of the jumping map — createGame called setMapSeed
+  // with a new random seed each render, changing terrain every frame.
+  const [stateRef] = useState(() => loadedState ?? createGame(difficulty, terrain));
   const viewRef = useRef<CameraView>({ x: 0, y: 0, zoom: 1 });
   const keysRef = useRef<Set<string>>(new Set());
   const mouseRef = useRef<{ x: number; y: number; down: boolean; dragStartX: number; dragStartY: number; dragging: boolean }>({
     x: 0, y: 0, down: false, dragStartX: 0, dragStartY: 0, dragging: false,
   });
   const buildTypeRef = useRef<BuildingTypeId | null>(null);
-  const lastSeasonRef = useRef<string>(stateRef.current.season);
+  const lastSeasonRef = useRef<string>(stateRef.season);
   const [, forceRender] = useState(0);
-  const [uiResources, setUiResources] = useState(stateRef.current.resources);
-  const [uiSeason, setUiSeason] = useState(stateRef.current.season);
-  const [uiDay, setUiDay] = useState(stateRef.current.day);
-  const [uiTotalDays, setUiTotalDays] = useState(stateRef.current.totalDays);
-  const [uiSpeed, setUiSpeed] = useState(stateRef.current.speed);
-  const [uiPop, setUiPop] = useState(stateRef.current.population);
-  const [uiHousing, setUiHousing] = useState(stateRef.current.housingUsed);
-  const [uiLog, setUiLog] = useState<string[]>(stateRef.current.log);
-  const [uiClassCounts, setUiClassCounts] = useState<Record<CitizenClass, number>>(stateRef.current.classCounts);
-  const [uiMasterPool, setUiMasterPool] = useState<{ classId: CitizenClass }[]>(stateRef.current.masterPool);
-  const [uiTraining, setUiTraining] = useState(stateRef.current.training.length);
-  const [uiGuests, setUiGuests] = useState(stateRef.current.guests);
+  const [uiResources, setUiResources] = useState(stateRef.resources);
+  const [uiSeason, setUiSeason] = useState(stateRef.season);
+  const [uiDay, setUiDay] = useState(stateRef.day);
+  const [uiTotalDays, setUiTotalDays] = useState(stateRef.totalDays);
+  const [uiSpeed, setUiSpeed] = useState(stateRef.speed);
+  const [uiPop, setUiPop] = useState(stateRef.population);
+  const [uiHousing, setUiHousing] = useState(stateRef.housingUsed);
+  const [uiLog, setUiLog] = useState<string[]>(stateRef.log);
+  const [uiClassCounts, setUiClassCounts] = useState<Record<CitizenClass, number>>(stateRef.classCounts);
+  const [uiMasterPool, setUiMasterPool] = useState<{ classId: CitizenClass }[]>(stateRef.masterPool);
+  const [uiTraining, setUiTraining] = useState(stateRef.training.length);
+  const [uiGuests, setUiGuests] = useState(stateRef.guests);
   const [buildType, setBuildType] = useState<BuildingTypeId | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameOverReason, setGameOverReason] = useState('');
   const [showPause, setShowPause] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<RibbonTab>(null);
+  const [muted, setMuted] = useState(isMuted());
 
   const syncUi = useCallback(() => {
-    const s = stateRef.current;
+    const s = stateRef;
     setUiResources({ ...s.resources });
     setUiSeason(s.season);
     setUiDay(s.day);
@@ -81,10 +89,9 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
   // Initialize audio + sound callback bridge.
   useEffect(() => {
     initAudio();
-    startAmbient(stateRef.current.season);
+    startAmbient(stateRef.season);
     startMusic();
 
-    // Bridge engine sound events to AudioSystem.
     setSoundCallback((event: SoundEvent) => {
       if (event === 'winterComes') {
         switchAmbient('winter');
@@ -128,7 +135,7 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
       if (keys.has('a') || keys.has('arrowleft')) view.x += moveSpeed;
       if (keys.has('d') || keys.has('arrowright')) view.x -= moveSpeed;
 
-      const s = stateRef.current;
+      const s = stateRef;
       if (!s.gameOver && s.speed > 0) {
         const interval = TICK_MS / s.speed;
         if (now - lastTick >= interval) {
@@ -139,7 +146,6 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
           lastTick = now;
           syncUi();
 
-          // Switch ambient when season changes.
           if (s.season !== lastSeasonRef.current) {
             lastSeasonRef.current = s.season;
             switchAmbient(s.season);
@@ -218,7 +224,7 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
       }
       if (k === ' ') {
         e.preventDefault();
-        const s = stateRef.current;
+        const s = stateRef;
         s.speed = s.speed === 0 ? 1 : 0;
         syncUi();
       }
@@ -285,8 +291,7 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
     const my = (e.clientY - rect.top) * (canvas.height / rect.height);
     const t = screenToTile(mx, my, viewRef.current);
     if (t.tileX < 0 || t.tileY < 0 || t.tileX >= GRID_W || t.tileY >= GRID_D) return;
-    const s = stateRef.current;
-    // Bridges: single-tile placement on any water tile.
+    const s = stateRef;
     const placed = placeBuilding(s, bt, t.tileX, t.tileY);
     if (placed) {
       playSound('placeBuilding');
@@ -305,14 +310,23 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
   }, []);
 
   const changeSpeed = useCallback((sp: number) => {
-    stateRef.current.speed = sp;
+    stateRef.speed = sp;
     syncUi();
   }, [syncUi]);
 
   const handleSave = useCallback(() => {
-    const ok = saveGame(stateRef.current);
+    const ok = saveGame(stateRef);
     setSaveMessage(ok ? 'Игра сохранена!' : 'Ошибка сохранения!');
     setTimeout(() => setSaveMessage(''), 2000);
+  }, []);
+
+  const handleMute = useCallback(() => {
+    const m = toggleMute();
+    setMuted(m);
+  }, []);
+
+  const toggleTab = useCallback((tab: RibbonTab) => {
+    setActiveTab((prev) => (prev === tab ? null : tab));
   }, []);
 
   return (
@@ -328,21 +342,61 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
         onContextMenu={(e) => { e.preventDefault(); selectBuild(null); }}
       />
 
-      {/* === NEW HUD LAYOUT === */}
+      {/* === Victoria 3-style left ribbon === */}
+      <div className="fixed left-0 top-0 h-full w-16 bg-stone-900 border-r border-stone-700/60 flex flex-col items-center pt-16 gap-1 z-30">
+        <RibbonIcon
+          icon={Hammer}
+          label="Стройка"
+          active={activeTab === 'build'}
+          onClick={() => toggleTab('build')}
+        />
+        <RibbonIcon
+          icon={Users}
+          label="Общество"
+          active={activeTab === 'society'}
+          onClick={() => toggleTab('society')}
+        />
+      </div>
 
-      {/* Top-left: hamburger menu button */}
-      <div className="absolute top-3 left-3 pointer-events-auto">
+      {/* === Slide-out panels attached to ribbon === */}
+      {activeTab === 'build' && (
+        <div
+          className="fixed left-16 top-16 h-[calc(100%-4rem)] w-72 bg-stone-900/95 border-r border-b border-stone-700/60 z-20 overflow-hidden animate-slide-out-right"
+        >
+          <BuildMenu
+            resources={uiResources}
+            selected={buildType}
+            onSelect={selectBuild}
+          />
+        </div>
+      )}
+
+      {activeTab === 'society' && (
+        <div
+          className="fixed left-16 top-16 h-[calc(100%-4rem)] w-72 bg-stone-900/95 border-r border-b border-stone-700/60 z-20 overflow-hidden animate-slide-out-right"
+        >
+          <SocietyPanel
+            classCounts={uiClassCounts}
+            masterPool={uiMasterPool}
+            trainingCount={uiTraining}
+            onTrain={() => { startTraining(stateRef); syncUi(); }}
+            canTrain={uiClassCounts.smerd > 0 && uiResources.food >= 16}
+          />
+        </div>
+      )}
+
+      {/* === Top bar === */}
+      <div className="absolute top-3 left-20 pointer-events-auto z-30">
         <button
           onClick={() => setShowPause(true)}
           title="Меню"
-          className="w-11 h-11 rounded-full wood-panel flex items-center justify-center text-amber-100 hover:ring-2 hover:ring-amber-400/40 transition-all"
+          className="w-11 h-11 rounded-full bg-stone-900/80 border border-stone-700/50 flex items-center justify-center text-amber-100 hover:ring-2 hover:ring-amber-400/40 transition-all"
         >
           <Menu size={20} />
         </button>
       </div>
 
-      {/* Top-center: Advisor bar with season/date + last log message */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-auto">
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-auto z-30">
         <AdvisorBar
           season={uiSeason}
           day={uiDay}
@@ -351,53 +405,34 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
         />
       </div>
 
-      {/* Top-right: time controls only */}
-      <div className="absolute top-3 right-3 pointer-events-auto">
+      <div className="absolute top-3 right-3 pointer-events-auto flex items-center gap-2 z-30">
+        <button
+          onClick={handleMute}
+          title={muted ? 'Включить звук' : 'Выключить звук'}
+          className="w-11 h-11 rounded-full bg-stone-900/80 border border-stone-700/50 flex items-center justify-center text-amber-100 hover:ring-2 hover:ring-amber-400/40 transition-all"
+        >
+          {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        </button>
         <TimeControls speed={uiSpeed} onSpeedChange={changeSpeed} />
       </div>
 
-      {/* Left side: build menu + society */}
-      <div className="absolute left-3 top-20 pointer-events-auto flex flex-col gap-3">
-        <BuildMenu
-          resources={uiResources}
-          selected={buildType}
-          onSelect={selectBuild}
-        />
-        <SocietyPanel
-          classCounts={uiClassCounts}
-          masterPool={uiMasterPool}
-          trainingCount={uiTraining}
-          onTrain={() => { startTraining(stateRef.current); syncUi(); }}
-          canTrain={uiClassCounts.smerd > 0 && uiResources.food >= 16}
-        />
-      </div>
-
-      {/* Right side: guests panel (if any) */}
-      <div className="absolute right-3 top-32 pointer-events-auto flex flex-col gap-3">
+      {/* Right side: guests panel */}
+      <div className="absolute right-3 top-20 pointer-events-auto flex flex-col gap-3 z-20">
         {uiGuests.length > 0 && <GuestsPanel guests={uiGuests} />}
       </div>
 
       {/* Save confirmation toast */}
       {saveMessage && (
-        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-none z-30">
-          <div className="wood-panel rounded-lg px-4 py-2 text-amber-100 text-sm animate-float-in">
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-none z-30">
+          <div className="bg-stone-900/90 border border-amber-700/30 rounded-lg px-4 py-2 text-amber-100 text-sm">
             {saveMessage}
           </div>
         </div>
       )}
 
-      {/* Bottom-center: resource bar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto z-20">
+      {/* === Full-width bottom resource bar === */}
+      <div className="fixed bottom-0 left-0 w-full h-12 bg-stone-900/95 border-t border-stone-700/60 flex items-center px-6 z-20">
         <ResourceBar resources={uiResources} />
-      </div>
-
-      {/* Bottom-left: controls hint */}
-      <div className="absolute bottom-4 left-3 pointer-events-none">
-        <div className="wood-panel rounded-lg px-3 py-1.5 text-stone-500 text-[11px] flex gap-3">
-          <span>WASD — камера</span>
-          <span>Колесо — зум</span>
-          <span>Пробел — пауза</span>
-        </div>
       </div>
 
       {/* Pause menu */}
@@ -409,22 +444,20 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
         onExit={onExit}
       />
 
-      {/* Settings panel */}
       {showSettings && (
         <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
       )}
 
-      {/* Game over overlay */}
       {gameOver && (
         <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="wood-panel rounded-xl p-8 max-w-md text-center animate-float-in">
+          <div className="bg-stone-900 border border-stone-700/50 rounded-xl p-8 max-w-md text-center">
             <h2 className="font-display text-4xl text-red-300 mb-3">Конец</h2>
             <p className="text-stone-300 mb-6">{gameOverReason}</p>
             <p className="text-stone-500 text-sm mb-6">
               Деревня продержалась {uiTotalDays} дней.
             </p>
             <button
-              className="btn-rune rounded-lg px-6 py-2.5 text-amber-100"
+              className="bg-stone-800 hover:bg-stone-700 border border-amber-700/30 rounded-lg px-6 py-2.5 text-amber-100 transition-all"
               onClick={onExit}
             >
               В главное меню
@@ -433,5 +466,32 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
         </div>
       )}
     </div>
+  );
+}
+
+function RibbonIcon({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: typeof Hammer;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all border ${
+        active
+          ? 'bg-amber-800/40 border-amber-500/40 text-amber-200'
+          : 'bg-stone-800/40 border-stone-700/40 text-stone-400 hover:bg-stone-700/40 hover:text-amber-200/70'
+      }`}
+    >
+      <Icon size={22} />
+      <span className="text-[8px] uppercase tracking-wide leading-none">{label}</span>
+    </button>
   );
 }

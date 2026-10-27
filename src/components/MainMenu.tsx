@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Trees, Scroll, Settings, LogOut, Flame, Swords, Shield } from 'lucide-react';
-import type { DifficultyId } from '@/game/types';
+import { Trees, Scroll, Settings, LogOut, Flame, Swords, Shield, Mountain, Waves } from 'lucide-react';
+import type { DifficultyId, TerrainConfig } from '@/game/types';
 import { DIFFICULTIES } from '@/game/constants';
 import SettingsPanel from './SettingsPanel';
 import { initAudio } from '@/game/AudioSystem';
 import { hasSave } from '@/game/storage';
 
 interface MainMenuProps {
-  onStart: (difficulty: DifficultyId) => void;
+  onStart: (difficulty: DifficultyId, terrain: TerrainConfig) => void;
   onLoad: () => void;
 }
 
@@ -22,10 +22,17 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
   const [selected, setSelected] = useState<DifficultyId | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [canLoad, setCanLoad] = useState(false);
+  const [hills, setHills] = useState(50);
+  const [rivers, setRivers] = useState(50);
 
   useEffect(() => {
     setCanLoad(hasSave());
   }, []);
+
+  const handleStart = () => {
+    if (!selected) return;
+    onStart(selected, { hills: hills / 100, rivers: rivers / 100 });
+  };
 
   return (
     <div className="parchment-bg min-h-screen w-full flex items-center justify-center relative overflow-hidden">
@@ -102,6 +109,30 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
                   );
                 })}
               </div>
+
+              {/* Terrain sliders */}
+              <div className="flex flex-col gap-3 bg-black/20 rounded-lg p-4 border border-amber-900/20">
+                <div className="text-amber-300/80 text-xs uppercase tracking-wider mb-1">
+                  Настройка рельефа
+                </div>
+                <SliderRow
+                  icon={Mountain}
+                  label="Гористость"
+                  value={hills}
+                  onChange={setHills}
+                  leftLabel="Равнина"
+                  rightLabel="Горы"
+                />
+                <SliderRow
+                  icon={Waves}
+                  label="Извилистость рек"
+                  value={rivers}
+                  onChange={setRivers}
+                  leftLabel="Прямые"
+                  rightLabel="Извилистые"
+                />
+              </div>
+
               <div className="flex gap-3 mt-2">
                 <button
                   className="btn-rune rounded-lg py-2 px-4 text-stone-300 flex-1"
@@ -112,7 +143,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
                 <button
                   className="btn-rune rounded-lg py-2 px-4 text-amber-100 flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={!selected}
-                  onClick={() => selected && onStart(selected)}
+                  onClick={handleStart}
                 >
                   Основать деревню
                 </button>
@@ -129,6 +160,44 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
       {showSettings && (
         <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
       )}
+    </div>
+  );
+}
+
+function SliderRow({
+  icon: Icon,
+  label,
+  value,
+  onChange,
+  leftLabel,
+  rightLabel,
+}: {
+  icon: typeof Mountain;
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  leftLabel: string;
+  rightLabel: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-stone-300 text-sm">
+        <Icon size={14} className="text-amber-400/70" />
+        <span className="flex-1">{label}</span>
+        <span className="text-amber-200/80 tabular-nums text-xs">{value}</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-amber-600 h-1.5"
+      />
+      <div className="flex justify-between text-stone-600 text-[10px]">
+        <span>{leftLabel}</span>
+        <span>{rightLabel}</span>
+      </div>
     </div>
   );
 }

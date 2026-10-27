@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Users, GraduationCap, UserPlus, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, GraduationCap, UserPlus, AlertTriangle } from 'lucide-react';
 import type { CitizenClass } from '@/game/types';
 import { CLASSES, CLASS_ORDER } from '@/game/constants';
 
@@ -18,76 +17,70 @@ export default function SocietyPanel({
   onTrain,
   canTrain,
 }: SocietyPanelProps) {
-  const [open, setOpen] = useState(true);
-
   return (
-    <div className="wood-panel rounded-xl overflow-hidden w-64">
-      <button
-        className="w-full px-4 py-2.5 flex items-center justify-between text-amber-100 hover:bg-amber-900/20"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="font-display text-lg flex items-center gap-2">
-          <Users size={18} className="text-amber-400/80" />
-          Общество
-        </span>
-        <span className="text-stone-400">
-          {open ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </span>
-      </button>
+    <div className="h-full overflow-y-auto thin-scroll px-4 py-3 flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-amber-300/90 text-xs uppercase tracking-wider border-b border-amber-900/30 pb-2">
+        <Users size={14} />
+        Общество
+      </div>
 
-      {open && (
-        <div className="px-3 pb-3">
-          <div className="flex flex-col gap-1.5">
-            {CLASS_ORDER.map((id) => {
-              const info = CLASSES[id];
-              const count = classCounts[id] ?? 0;
-              const freeMasters = masterPool.filter((m) => m.classId === id).length;
-              return (
-                <div key={id} className="flex items-center gap-2">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ background: info.color }}
-                  />
-                  <span className="text-stone-300 text-sm flex-1">{info.name}</span>
-                  <span className="text-amber-100 tabular-nums text-sm font-medium">{count}</span>
-                  {freeMasters > 0 && (
-                    <span className="text-emerald-400/70 text-[10px]" title="Свободный мастер">
-                      +{freeMasters}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 pt-2 border-t border-amber-900/30">
-            <div className="flex items-center gap-1.5 text-stone-400 text-xs mb-1.5">
-              <GraduationCap size={12} />
-              Училище
-            </div>
-            {trainingCount > 0 && (
-              <div className="text-stone-500 text-xs mb-1.5">
-                В обучении: {trainingCount} смердов
-              </div>
-            )}
-            <button
-              onClick={onTrain}
-              disabled={!canTrain}
-              className={`btn-rune rounded-lg py-1.5 px-2 text-xs flex items-center justify-center gap-1.5 w-full ${
-                !canTrain ? 'opacity-40 cursor-not-allowed' : ''
-              }`}
+      <div className="flex flex-col gap-2">
+        {CLASS_ORDER.map((id) => {
+          const info = CLASSES[id];
+          const count = classCounts[id] ?? 0;
+          const freeMasters = masterPool.filter((m) => m.classId === id).length;
+          return (
+            <div
+              key={id}
+              className="flex items-center gap-2 bg-stone-800/40 rounded-lg px-3 py-2 border border-stone-700/40"
             >
-              <UserPlus size={12} />
-              Обучить ремеслу
-            </button>
-            {!canTrain && (
-              <div className="text-stone-600 text-[10px] mt-1 flex items-center gap-1">
-                <AlertTriangle size={9} /> Нужен смерд и 16 пищи
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ background: info.color }}
+              />
+              <div className="flex-1">
+                <div className="text-stone-200 text-sm">{info.name}</div>
+                <div className="text-stone-500 text-[10px] leading-tight">{info.description}</div>
               </div>
-            )}
-          </div>
+              <span className="text-amber-100 tabular-nums text-base font-medium">{count}</span>
+              {freeMasters > 0 && (
+                <span className="text-emerald-400/70 text-[10px]" title="Свободный мастер">
+                  +{freeMasters}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-1 pt-2 border-t border-stone-700/40">
+        <div className="flex items-center gap-1.5 text-stone-400 text-xs mb-2">
+          <GraduationCap size={12} />
+          Училище
         </div>
-      )}
+        {trainingCount > 0 && (
+          <div className="text-stone-500 text-xs mb-2">
+            В обучении: {trainingCount} смердов
+          </div>
+        )}
+        <button
+          onClick={onTrain}
+          disabled={!canTrain}
+          className={`rounded-lg py-2 px-2 text-xs flex items-center justify-center gap-1.5 w-full border transition-all ${
+            canTrain
+              ? 'bg-stone-800/60 hover:bg-stone-700/50 border-stone-700/50 text-amber-100'
+              : 'bg-stone-800/30 border-stone-800/30 text-stone-500 cursor-not-allowed'
+          }`}
+        >
+          <UserPlus size={12} />
+          Обучить ремеслу
+        </button>
+        {!canTrain && (
+          <div className="text-stone-600 text-[10px] mt-1.5 flex items-center gap-1">
+            <AlertTriangle size={9} /> Нужен смерд и 16 пищи
+          </div>
+        )}
+      </div>
     </div>
   );
 }

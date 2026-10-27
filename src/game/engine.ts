@@ -9,6 +9,7 @@ import type {
   PlacedBuilding,
   ResourceId,
   Season,
+  TerrainConfig,
 } from './types';
 import {
   BUILDINGS,
@@ -25,20 +26,7 @@ import {
   TICKS_PER_DAY,
   isWinter,
 } from './constants';
-import { inBounds, isWater, findPath, collectBridgeTiles, setMapSeed, setTerrainConfig, findNearestDecoration, hashRand, type TerrainConfig } from './iso';
-import type {
-  Agent,
-  AgentState,
-  BuildingType,
-  BuildingTypeId,
-  CitizenClass,
-  DifficultyConfig,
-  Guest,
-  PlacedBuilding,
-  ResourceId,
-  Season,
-  TerrainConfig as TerrainConfigType,
-} from './types';
+import { inBounds, isWater, findPath, collectBridgeTiles, setMapSeed, setTerrainConfig, findNearestDecoration, hashRand } from './iso';
 
 // Sound event callback — set by GameView to bridge engine -> AudioSystem.
 export type SoundCallback = (event: 'placeBuilding' | 'buildingFinished' | 'winterComes' | 'guestArrives' | 'starvation' | 'trainingComplete') => void;
@@ -443,8 +431,6 @@ function moveAgents(state: GameState) {
         const dx = cx - a.tileX;
         const dy = cy - a.tileY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const winter = isWinter(state.season);
-        const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
         a.phase = (a.phase + speed) % 1;
         if (dist < ARRIVAL_RADIUS) {
           state.agents.splice(i, 1);
@@ -467,8 +453,6 @@ function moveAgents(state: GameState) {
       const dx = tx - a.tileX;
       const dy = ty - a.tileY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const winter = isWinter(state.season);
-      const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
       a.phase = (a.phase + speed) % 1;
       if (dist < ARRIVAL_RADIUS) {
         // Arrived home — go idle, ready for next assignment.
@@ -522,8 +506,6 @@ function moveAgents(state: GameState) {
       a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
     }
 
-    const winter = isWinter(state.season);
-    const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
     a.phase = (a.phase + speed) % 1;
 
     if (dist < ARRIVAL_RADIUS) {
