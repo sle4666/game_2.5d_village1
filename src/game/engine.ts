@@ -25,8 +25,13 @@ import {
   TICKS_PER_DAY,
   isWinter,
 } from './constants';
-import { inBounds } from './iso';
-import { isWater } from './iso';
+import { inBounds, isWater, findPath, collectBridgeTiles } from './iso';
+
+// Agent movement speed in tiles per tick (higher = faster).
+export const AGENT_SPEED = 0.18;
+const AGENT_SPEED_WINTER = 0.12;
+// Minimum days between guest arrivals (cooldown).
+const GUEST_COOLDOWN_DAYS = 12;
 
 export interface GameState {
   difficulty: DifficultyConfig;
@@ -52,6 +57,7 @@ export interface GameState {
   // training queue: days remaining per trainee
   training: { daysLeft: number }[];
   masterPool: { classId: CitizenClass }[]; // unassigned masters available
+  guestCooldown: number; // days until next guest can arrive
 }
 
 function emptyGrid<T>(value: T): T[][] {
@@ -112,6 +118,7 @@ export function createGame(difficultyId: string): GameState {
     classCounts,
     training: [],
     masterPool: [],
+    guestCooldown: 0,
   };
 }
 
@@ -222,10 +229,12 @@ function assignBuilders(state: GameState) {
       free.state = 'toSite';
       free.targetUid = warehouse.uid; // go to warehouse first
       free.carrying = {};
+      free.path = [];
     } else {
       free.state = 'toSite';
       free.targetUid = site.uid;
       free.carrying = {};
+      free.path = [];
     }
   }
 }
@@ -238,24 +247,56 @@ function hasUnmetMaterials(b: PlacedBuilding): boolean {
   return false;
 }
 
-// Move agents toward their target building tile.
+// Move agents toward their target building tile using A* pathfinding.
+// Agents avoid water unless a bridge is built on that tile.
 function moveAgents(state: GameState) {
+  const bridgeTiles = collectBridgeTiles(
+    state.buildings.filter((b) => BUILDINGS[b.typeId].isBridge)
+  );
   for (const a of state.agents) {
     if (a.state === 'idle' || a.state === 'working') continue;
     const target = state.buildings.find((b) => b.uid === a.targetUid);
-    if (!target) { a.state = 'idle'; a.targetUid = -1; continue; }
+    if (!target) { a.state = 'idle'; a.targetUid = -1; a.path = []; continue; }
     const tType = BUILDINGS[target.typeId];
     const tx = target.tileX + tType.size.w / 2;
     const ty = target.tileY + tType.size.d / 2;
-    const dx = tx - a.tileX;
-    const dy = ty - a.tileY;
+
+    // If we have no path or the path is exhausted, compute one.
+    if (a.path.length === 0) {
+      const path = findPath(
+        Math.round(a.tileX),
+        Math.round(a.tileY),
+        Math.round(tx),
+        Math.round(ty),
+        bridgeTiles,
+        state.occupied
+      );
+      if (path && path.length > 0) {
+        a.path = path;
+      } else {
+        // No path found — fallback to direct movement (e.g. very close).
+        a.path = [{ x: tx, y: ty }];
+      }
+    }
+
+    // Move toward the next waypoint in the path.
+    const wp = a.path[0];
+    const dx = wp.x - a.tileX;
+    const dy = wp.y - a.tileY;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const winter = isWinter(state.season);
-    const speed = winter ? 0.06 : 0.1;
+    const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
     a.phase = (a.phase + speed) % 1;
-    if (dist < 0.3) {
-      // arrived — handle based on what target is
-      onAgentArrive(state, a, target);
+
+    if (dist < speed * 1.5) {
+      // reached waypoint — advance path
+      a.tileX = wp.x;
+      a.tileY = wp.y;
+      a.path.shift();
+      if (a.path.length === 0) {
+        // arrived at final destination
+        onAgentArrive(state, a, target);
+      }
     } else {
       a.tileX += (dx / dist) * speed;
       a.tileY += (dy / dist) * speed;
@@ -296,6 +337,7 @@ function onAgentArrive(state: GameState, a: Agent, target: PlacedBuilding) {
     a.carrying = carrying;
     a.targetUid = site.uid;
     a.state = 'toSite';
+    a.path = [];
     return;
   }
   // If target is a construction site: deliver materials / build
@@ -313,6 +355,7 @@ function onAgentArrive(state: GameState, a: Agent, target: PlacedBuilding) {
       if (wh) {
         a.targetUid = wh.uid;
         a.state = 'toSite';
+        a.path = [];
       } else {
         // no warehouse yet — work in place slowly
         a.state = 'working';
@@ -354,6 +397,7 @@ function advanceConstruction(state: GameState) {
       for (const w of workers) {
         w.state = 'returning';
         w.targetUid = w.homeUid > 0 ? w.homeUid : -1;
+        w.path = [];
       }
       // assign master if needed
       if (t.requiresMaster && t.masterClass) {
@@ -388,6 +432,7 @@ function assignWorkers(state: GameState) {
     free.assignedBuildingUid = b.uid;
     free.targetUid = b.uid;
     free.state = 'toSite';
+    free.path = [];
   }
 }
 
@@ -495,9 +540,15 @@ export function startTraining(state: GameState): boolean {
 }
 
 function maybeSpawnGuest(state: GameState) {
-  // ~10% chance per day in non-winter, less in winter
-  const chance = isWinter(state.season) ? 0.04 : 0.1;
+  // Respect cooldown — guests arrive much less frequently now.
+  if (state.guestCooldown > 0) {
+    state.guestCooldown -= 1;
+    return;
+  }
+  // ~2.5% chance per day in non-winter, ~1% in winter, only after cooldown.
+  const chance = isWinter(state.season) ? 0.01 : 0.025;
   if (Math.random() > chance) return;
+  state.guestCooldown = GUEST_COOLDOWN_DAYS;
   const ni = Math.floor(Math.random() * GUEST_NAMES.length);
   const oi = Math.floor(Math.random() * GUEST_ORIGINS.length);
   const kinds: Guest['kind'][] = ['envoy', 'merchant', 'refugee'];
@@ -644,6 +695,7 @@ function makeAgent(
     phase: 0,
     jobType: classId === 'otrok' ? 'worker' : 'builder',
     assignedBuildingUid: 0,
+    path: [],
   };
 }
 
@@ -662,8 +714,61 @@ export function seasonName(s: Season): string {
   return SEASON_INFO[s].name;
 }
 
-// Recompute class counts from agents (for UI).
-export function recomputeClasses(state: GameState) {
+// When agents are assigned a new target, clear their cached path so A*
+// recomputes from the current position. Called inside assignBuilders/
+// assignWorkers/onAgentArrive whenever targetUid changes.
+// (Inline path clearing is done at those call sites for simplicity.)
+
+// Place a span of bridge tiles from one shore to another across the river.
+// The player clicks a water tile; we find the nearest non-water tiles on both
+// sides along the X axis and fill every water tile in between with bridges.
+export function placeBridgeSpan(
+  state: GameState,
+  tileX: number,
+  tileY: number
+): PlacedBuilding[] {
+  if (!isWater(tileX, tileY)) return [];
+  // Find west shore (decreasing X) and east shore (increasing X).
+  let westX = tileX;
+  while (westX > 0 && isWater(westX, tileY)) westX--;
+  let eastX = tileX;
+  while (eastX < GRID_W - 1 && isWater(eastX, tileY)) eastX++;
+  // westX and eastX are now on land (or out of bounds). Bridge spans between
+  // westX+1 .. eastX-1 (the water tiles).
+  const placed: PlacedBuilding[] = [];
+  const type = BUILDINGS.bridge;
+  for (let x = westX + 1; x <= eastX - 1; x++) {
+    if (state.occupied[x][tileY]) continue;
+    // check cost — if we can't afford all, place what we can
+    const canPay = Object.entries(type.cost).every(
+      ([id, amt]) => state.resources[id as ResourceId] >= (amt ?? 0)
+    );
+    if (!canPay) break;
+    // pay
+    for (const [id, amount] of Object.entries(type.cost)) {
+      state.resources[id as ResourceId] -= amount ?? 0;
+    }
+    const b: PlacedBuilding = {
+      uid: state.nextUid++,
+      typeId: 'bridge',
+      tileX: x,
+      tileY,
+      progress: 0,
+      built: false,
+      hasMaster: false,
+      storedMaterials: {},
+      neededMaterials: {},
+    };
+    state.occupied[x][tileY] = true;
+    state.buildings.push(b);
+    placed.push(b);
+  }
+  if (placed.length > 0) {
+    state.log.unshift(`Мост через реку заложен (${placed.length} клеток).`);
+    if (state.log.length > 10) state.log.pop();
+  }
+  return placed;
+}
   state.classCounts = { smerd: 0, craftsman: 0, otrok: 0, volkhv: 0 };
   for (const a of state.agents) {
     state.classCounts[a.classId]++;

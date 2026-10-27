@@ -113,6 +113,7 @@ export interface Agent {
   phase: number; // 0..1 walk cycle
   jobType: 'builder' | 'worker' | 'hauler';
   assignedBuildingUid: number; // production building worked at (for workers)
+  path: { x: number; y: number }[]; // A* path waypoints
 }
 
 // --- Guests (envoys, merchants, refugees) ---

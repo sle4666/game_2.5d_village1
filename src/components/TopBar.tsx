@@ -1,4 +1,4 @@
-import { Pause, Play, FastForward, Snowflake, Leaf, Sun, CloudRain } from 'lucide-react';
+import { Pause, Play, FastForward, Snowflake, Leaf, Sun, CloudRain, Settings } from 'lucide-react';
 import type { Season } from '@/game/types';
 import { DAYS_PER_SEASON, SEASON_INFO } from '@/game/constants';
 
@@ -11,6 +11,7 @@ interface TopBarProps {
   housingUsed: number;
   onSpeedChange: (s: number) => void;
   onMenu: () => void;
+  onSettings: () => void;
 }
 
 const SEASON_ICONS: Record<Season, typeof Sun> = {
@@ -29,6 +30,7 @@ export default function TopBar({
   housingUsed,
   onSpeedChange,
   onMenu,
+  onSettings,
 }: TopBarProps) {
   const Icon = SEASON_ICONS[season];
   const sinfo = SEASON_INFO[season];
@@ -72,6 +74,14 @@ export default function TopBar({
       </div>
 
       <div className="flex-1" />
+
+      <button
+        onClick={onSettings}
+        title="Настройки"
+        className="p-2 rounded-md bg-black/30 text-stone-400 hover:bg-amber-900/25 transition-all mr-1"
+      >
+        <Settings size={16} />
+      </button>
 
       <button
         onClick={onMenu}

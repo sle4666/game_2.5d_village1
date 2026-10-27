@@ -85,3 +85,100 @@ export function tileDecoration(tileX: number, tileY: number): 'tree' | 'rock' | 
   if (v > 0.93 && h > 14) return 'rock';
   return null;
 }
+
+// --- Pathfinding (A* on grid) ---
+// A tile is passable if it's in bounds, not water (unless a bridge occupies it),
+// and not occupied by a building. Bridges are passed in as a set of "x,y" keys.
+export function isPassable(
+  tileX: number,
+  tileY: number,
+  bridgeTiles: Set<string>
+): boolean {
+  if (!inBounds(tileX, tileY)) return false;
+  if (isWater(tileX, tileY)) {
+    return bridgeTiles.has(`${tileX},${tileY}`);
+  }
+  return true;
+}
+
+interface PathNode {
+  x: number;
+  y: number;
+  g: number;
+  f: number;
+  parent: PathNode | null;
+}
+
+// A* pathfinding. Returns array of {x,y} tiles from start (exclusive) to goal
+// (inclusive), or null if no path. Uses Manhattan distance heuristic.
+export function findPath(
+  startX: number,
+  startY: number,
+  goalX: number,
+  goalY: number,
+  bridgeTiles: Set<string>,
+  occupied: boolean[][]
+): { x: number; y: number }[] | null {
+  if (!inBounds(startX, startY) || !inBounds(goalX, goalY)) return null;
+  const key = (x: number, y: number) => `${x},${y}`;
+  const open: PathNode[] = [];
+  const closed = new Set<string>();
+  const startNode: PathNode = { x: startX, y: startY, g: 0, f: 0, parent: null };
+  open.push(startNode);
+
+  let iterations = 0;
+  const MAX_ITER = 2000;
+
+  while (open.length > 0 && iterations < MAX_ITER) {
+    iterations++;
+    // pick lowest f
+    let bestIdx = 0;
+    for (let i = 1; i < open.length; i++) {
+      if (open[i].f < open[bestIdx].f) bestIdx = i;
+    }
+    const current = open.splice(bestIdx, 1)[0];
+    const ck = key(current.x, current.y);
+    if (closed.has(ck)) continue;
+    closed.add(ck);
+
+    if (current.x === goalX && current.y === goalY) {
+      // reconstruct path
+      const path: { x: number; y: number }[] = [];
+      let n: PathNode | null = current;
+      while (n && n.parent) {
+        path.unshift({ x: n.x, y: n.y });
+        n = n.parent;
+      }
+      return path;
+    }
+
+    // 4-directional neighbors
+    const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+    for (const [dx, dy] of dirs) {
+      const nx = current.x + dx;
+      const ny = current.y + dy;
+      const nk = key(nx, ny);
+      if (closed.has(nk)) continue;
+      // goal is always reachable even if occupied (the target building)
+      const isGoal = nx === goalX && ny === goalY;
+      if (!isPassable(nx, ny, bridgeTiles)) continue;
+      if (!isGoal && occupied[nx] && occupied[nx][ny]) continue;
+      const g = current.g + 1;
+      const h = Math.abs(nx - goalX) + Math.abs(ny - goalY);
+      const f = g + h;
+      open.push({ x: nx, y: ny, g, f, parent: current });
+    }
+  }
+  return null;
+}
+
+// Helper: collect all built bridge tiles from the game's buildings.
+export function collectBridgeTiles(
+  bridges: { tileX: number; tileY: number; built: boolean }[]
+): Set<string> {
+  const set = new Set<string>();
+  for (const b of bridges) {
+    if (b.built) set.add(`${b.tileX},${b.tileY}`);
+  }
+  return set;
+}

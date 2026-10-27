@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GRID_D, GRID_W, TILE_H, TILE_W, BUILDINGS, TICK_MS } from '@/game/constants';
 import { screenToTile, tileToScreen, type CameraView } from '@/game/iso';
-import { canPlace, createGame, placeBuilding, tick, seedAgents, startTraining, type GameState } from '@/game/engine';
+import { canPlace, createGame, placeBuilding, placeBridgeSpan, tick, seedAgents, startTraining, type GameState } from '@/game/engine';
 import { render } from '@/game/render';
 import type { CitizenClass, BuildingTypeId, DifficultyId } from '@/game/types';
+import { initAudio, startAmbient, startMusic, playSound } from '@/game/AudioSystem';
 import ResourceBar from './ResourceBar';
 import BuildMenu from './BuildMenu';
 import TopBar from './TopBar';
 import EventLog from './EventLog';
 import SocietyPanel from './SocietyPanel';
 import GuestsPanel from './GuestsPanel';
+import SettingsPanel from './SettingsPanel';
 
 interface GameViewProps {
   difficulty: DifficultyId;
@@ -41,6 +43,7 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
   const [buildType, setBuildType] = useState<BuildingTypeId | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameOverReason, setGameOverReason] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   const syncUi = useCallback(() => {
     const s = stateRef.current;
@@ -74,6 +77,10 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       y: canvas.height / 2 - p.y,
       zoom: 1,
     };
+    // Start ambient sounds and music.
+    initAudio();
+    startAmbient();
+    startMusic();
   }, []);
 
   // Game loop
@@ -198,8 +205,10 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const view = viewRef.current;
-    const factor = e.deltaY < 0 ? 1.12 : 0.89;
-    const newZoom = Math.max(0.5, Math.min(2.5, view.zoom * factor));
+    const factor = e.deltaY < 0 ? 1.1 : 0.91;
+    // Hard clamp: min 0.4 (far), max 1.6 (close). Prevents texture clipping.
+    const newZoom = Math.max(0.4, Math.min(1.6, view.zoom * factor));
+    if (newZoom === view.zoom) return;
     // zoom toward cursor
     const canvas = canvasRef.current;
     if (canvas) {
@@ -250,8 +259,18 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
     const t = screenToTile(mx, my, viewRef.current);
     if (t.tileX < 0 || t.tileY < 0 || t.tileX >= GRID_W || t.tileY >= GRID_D) return;
     const s = stateRef.current;
+    // Bridges use span placement: one click fills the whole river cross-section.
+    if (bt === 'bridge') {
+      const placed = placeBridgeSpan(s, t.tileX, t.tileY);
+      if (placed.length > 0) {
+        playSound('build');
+        syncUi();
+      }
+      return;
+    }
     const placed = placeBuilding(s, bt, t.tileX, t.tileY);
     if (placed) {
+      playSound('build');
       syncUi();
       // keep build mode active for rapid placement
     }
@@ -297,6 +316,7 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
             housingUsed={uiHousing}
             onSpeedChange={changeSpeed}
             onMenu={onExit}
+            onSettings={() => setShowSettings(true)}
           />
         </div>
         <div className="pointer-events-auto flex-1 flex justify-end">
@@ -337,6 +357,10 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       </div>
 
       {/* Game over overlay */}
+      {showSettings && (
+        <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      )}
+
       {gameOver && (
         <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="wood-panel rounded-xl p-8 max-w-md text-center animate-float-in">
