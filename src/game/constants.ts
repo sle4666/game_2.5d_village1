@@ -1,6 +1,8 @@
 import type {
   BuildingType,
   BuildingTypeId,
+  CitizenClass,
+  ClassInfo,
   DifficultyConfig,
   DifficultyId,
   ResourceId,
@@ -38,6 +40,56 @@ export const RESOURCE_ORDER: ResourceId[] = [
   'gold',
   'workers',
 ];
+
+// --- Citizen classes ---
+export const CLASSES: Record<CitizenClass, ClassInfo> = {
+  smerd: {
+    id: 'smerd',
+    name: 'Смерд',
+    pluralName: 'Смерды',
+    color: '#8a7a5a',
+    canBuild: true,
+    canFight: true,
+    canRitual: false,
+    canCraft: false,
+    description: 'Чернорабочие. Рубят лес, носят материалы, строят.',
+  },
+  craftsman: {
+    id: 'craftsman',
+    name: 'Ремесленник',
+    pluralName: 'Ремесленники',
+    color: '#c47a3a',
+    canBuild: true,
+    canFight: false,
+    canRitual: false,
+    canCraft: true,
+    description: 'Мастера. Работают в кузне и сложных производствах.',
+  },
+  otrok: {
+    id: 'otrok',
+    name: 'Отрок',
+    pluralName: 'Отроки',
+    color: '#6a8aa6',
+    canBuild: false,
+    canFight: true,
+    canRitual: false,
+    canCraft: false,
+    description: 'Воины. Защищают деревню от набегов. Не строят.',
+  },
+  volkhv: {
+    id: 'volkhv',
+    name: 'Волхв',
+    pluralName: 'Волхвы',
+    color: '#d8c06a',
+    canBuild: true,
+    canFight: false,
+    canRitual: true,
+    canCraft: false,
+    description: 'Жрецы. Проводят обряды, лечат, связываются с духами леса.',
+  },
+};
+
+export const CLASS_ORDER: CitizenClass[] = ['smerd', 'craftsman', 'otrok', 'volkhv'];
 
 export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
   easy: {
@@ -112,7 +164,7 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
   woodcutter: {
     id: 'woodcutter',
     name: 'Лесопилка',
-    description: 'Рабочие рубят лес. Производит дерево.',
+    description: 'Смерды рубят лес. Производит дерево.',
     cost: { wood: 15, stone: 3 },
     size: { w: 2, d: 2 },
     color: '#7a5a34',
@@ -177,7 +229,7 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
   smithy: {
     id: 'smithy',
     name: 'Кузня',
-    description: 'Переработка руды в инструменты. Требует руду.',
+    description: 'Переработка руды в инструменты. Требует мастера-ремесленника.',
     cost: { wood: 30, stone: 15, ore: 10 },
     size: { w: 2, d: 2 },
     color: '#4a4a52',
@@ -186,22 +238,25 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
     produces: { gold: 0.4 },
     consumes: { ore: 0.3, workers: 1 },
     buildTicks: 12,
+    requiresMaster: true,
+    masterClass: 'craftsman',
   },
   warehouse: {
     id: 'warehouse',
     name: 'Амбар',
-    description: 'Хранилище. Увеличивает запас ресурсов и защищает еду зимой.',
+    description: 'Хранилище. Источник материалов для стройки. Защищает еду зимой.',
     cost: { wood: 22, stone: 5 },
     size: { w: 2, d: 2 },
     color: '#8a6a42',
     roof: '#5a4326',
     category: 'storage',
     buildTicks: 7,
+    storesResources: true,
   },
   sanctuary: {
     id: 'sanctuary',
     name: 'Капище',
-    description: 'Святилище с идолами. Генерирует веру для задабривания духов.',
+    description: 'Святилище с идолами. Требует волхва для обрядов.',
     cost: { wood: 25, stone: 12 },
     size: { w: 2, d: 2 },
     color: '#6a5a44',
@@ -210,6 +265,8 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
     produces: { faith: 0.5 },
     consumes: { workers: 1 },
     buildTicks: 10,
+    requiresMaster: true,
+    masterClass: 'volkhv',
   },
   palisade: {
     id: 'palisade',
@@ -221,6 +278,32 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
     roof: '#6b4f30',
     category: 'defense',
     buildTicks: 3,
+  },
+  school: {
+    id: 'school',
+    name: 'Училище',
+    description: 'Обучает Смерда в Ремесленника. Процесс долгий, требует еду.',
+    cost: { wood: 28, stone: 10 },
+    size: { w: 2, d: 2 },
+    color: '#7a6a4a',
+    roof: '#4a3a24',
+    category: 'civic',
+    buildTicks: 10,
+    requiresMaster: true,
+    masterClass: 'craftsman',
+  },
+  tavern: {
+    id: 'tavern',
+    name: 'Корчма',
+    description: 'Гостевой двор для послов и купцов. Если гость замёрзнет — война.',
+    cost: { wood: 26, stone: 8 },
+    size: { w: 2, d: 2 },
+    color: '#8a5a3a',
+    roof: '#5a3a22',
+    category: 'civic',
+    housing: 0,
+    buildTicks: 9,
+    guestCapacity: 3,
   },
 };
 
@@ -238,40 +321,17 @@ export const BUILD_CATEGORIES: {
   { id: 'storage', name: 'Логистика', types: ['warehouse'] },
   { id: 'faith', name: 'Религия', types: ['sanctuary'] },
   { id: 'defense', name: 'Защита', types: ['palisade'] },
+  { id: 'civic', name: 'Общество', types: ['school', 'tavern'] },
 ];
 
 export const SEASON_INFO: Record<
   Season,
   { name: string; sky: string; ground: string; accent: string; snow: number }
 > = {
-  spring: {
-    name: 'Весна',
-    sky: '#b9d4c4',
-    ground: '#6f8a4a',
-    accent: '#a8d08a',
-    snow: 0,
-  },
-  summer: {
-    name: 'Лето',
-    sky: '#a9d6e8',
-    ground: '#7fa05a',
-    accent: '#cfe39a',
-    snow: 0,
-  },
-  autumn: {
-    name: 'Осень',
-    sky: '#d8c79a',
-    ground: '#8a7a4a',
-    accent: '#d6a55a',
-    snow: 0.15,
-  },
-  winter: {
-    name: 'Зима',
-    sky: '#cfd8e0',
-    ground: '#cdd6dc',
-    accent: '#e8eef2',
-    snow: 1,
-  },
+  spring: { name: 'Весна', sky: '#b9d4c4', ground: '#6f8a4a', accent: '#a8d08a', snow: 0 },
+  summer: { name: 'Лето', sky: '#a9d6e8', ground: '#7fa05a', accent: '#cfe39a', snow: 0 },
+  autumn: { name: 'Осень', sky: '#d8c79a', ground: '#8a7a4a', accent: '#d6a55a', snow: 0.15 },
+  winter: { name: 'Зима', sky: '#cfd8e0', ground: '#cdd6dc', accent: '#e8eef2', snow: 1 },
 };
 
 export const SEASON_ORDER: Season[] = ['spring', 'summer', 'autumn', 'winter'];
@@ -279,3 +339,17 @@ export const SEASON_ORDER: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 export function isWinter(season: Season): boolean {
   return season === 'winter';
 }
+
+// Training: cost (in food per day) and duration to upgrade a smerd
+export const TRAIN_FOOD_PER_DAY = 2;
+export const TRAIN_DAYS = 8;
+
+// Guest names pool
+export const GUEST_NAMES = [
+  'Посол Вятичей', 'Купец из Гардарики', 'Беженец из пепелищ',
+  'Гонец Ярла', 'Странник-волхв', 'Торговец пушниной',
+];
+export const GUEST_ORIGINS = [
+  'Племя Вятичей', 'Гардарики', 'Пограничье', 'Стан Ярла',
+  'Священная роща', 'Северный путь',
+];

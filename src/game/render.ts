@@ -5,10 +5,11 @@ import {
   TILE_H,
   TILE_W,
   BUILDINGS,
+  CLASSES,
 } from './constants';
 import { tileDecoration, tileHeight, tileToScreen, type CameraView } from './iso';
 import type { GameState } from './engine';
-import type { BuildingType, PlacedBuilding, Season } from './types';
+import type { Agent, BuildingType, PlacedBuilding, Season } from './types';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;
@@ -70,17 +71,65 @@ export function render(rc: RenderContext, state: GameState) {
     }
   }
 
-  // Draw buildings sorted by depth.
+  // Draw buildings and agents sorted by depth.
   const sorted = [...state.buildings].sort(
     (a, b) => a.tileX + a.tileY - (b.tileX + b.tileY)
   );
   for (const b of sorted) drawBuilding(rc, b, state);
 
-  // Draw trees/rocks after buildings on the same depth pass would be ideal,
-  // but for a prototype we draw decorations as part of tiles (above).
+  // Draw agents sorted by depth (tileX+tileY).
+  const sortedAgents = [...state.agents].sort(
+    (a, b) => a.tileX + a.tileY - (b.tileX + b.tileY)
+  );
+  for (const a of sortedAgents) drawAgent(rc, a, state);
+
   // Ghost placement preview:
   if (rc.hoverTile && rc.ghostType) {
     drawGhost(rc, state, rc.ghostType, rc.hoverTile.x, rc.hoverTile.y, rc.ghostValid);
+  }
+}
+
+function drawAgent(rc: RenderContext, a: Agent, state: GameState) {
+  const { ctx, view } = rc;
+  const p = tileToScreen(a.tileX, a.tileY, view);
+  const z = view.zoom;
+  const info = CLASSES[a.classId];
+  const bob = Math.sin(a.phase * Math.PI * 2) * 2 * z;
+  const cx = p.x;
+  const cy = p.y - 4 * z + bob;
+
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(cx, p.y, 5 * z, 2.5 * z, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // body (small capsule)
+  ctx.fillStyle = info.color;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 4 * z, 4 * z, 6 * z, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head
+  ctx.fillStyle = '#e0c8a0';
+  ctx.beginPath();
+  ctx.arc(cx, cy - 11 * z, 3 * z, 0, Math.PI * 2);
+  ctx.fill();
+
+  // carrying indicator (small dot above if hauling)
+  const carryTotal = Object.values(a.carrying).reduce((s, v) => s + (v ?? 0), 0);
+  if (carryTotal > 0) {
+    ctx.fillStyle = '#a9743b';
+    ctx.fillRect(cx - 3 * z, cy - 17 * z, 6 * z, 4 * z);
+  }
+
+  // class ring for non-smerd
+  if (a.classId !== 'smerd') {
+    ctx.strokeStyle = info.color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 11 * z, 4.5 * z, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 

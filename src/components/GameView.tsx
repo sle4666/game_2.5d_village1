@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GRID_D, GRID_W, TILE_H, TILE_W, BUILDINGS, TICK_MS } from '@/game/constants';
 import { screenToTile, tileToScreen, type CameraView } from '@/game/iso';
-import { canPlace, createGame, placeBuilding, tick, type GameState } from '@/game/engine';
+import { canPlace, createGame, placeBuilding, tick, seedAgents, startTraining, type GameState } from '@/game/engine';
 import { render } from '@/game/render';
-import type { BuildingTypeId, DifficultyId } from '@/game/types';
+import type { CitizenClass, BuildingTypeId, DifficultyId } from '@/game/types';
 import ResourceBar from './ResourceBar';
 import BuildMenu from './BuildMenu';
 import TopBar from './TopBar';
 import EventLog from './EventLog';
+import SocietyPanel from './SocietyPanel';
+import GuestsPanel from './GuestsPanel';
 
 interface GameViewProps {
   difficulty: DifficultyId;
@@ -32,6 +34,10 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
   const [uiPop, setUiPop] = useState(stateRef.current.population);
   const [uiHousing, setUiHousing] = useState(stateRef.current.housingUsed);
   const [uiLog, setUiLog] = useState<string[]>(stateRef.current.log);
+  const [uiClassCounts, setUiClassCounts] = useState<Record<CitizenClass, number>>(stateRef.current.classCounts);
+  const [uiMasterPool, setUiMasterPool] = useState<{ classId: CitizenClass }[]>(stateRef.current.masterPool);
+  const [uiTraining, setUiTraining] = useState(stateRef.current.training.length);
+  const [uiGuests, setUiGuests] = useState(stateRef.current.guests);
   const [buildType, setBuildType] = useState<BuildingTypeId | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameOverReason, setGameOverReason] = useState('');
@@ -46,6 +52,10 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
     setUiPop(s.population);
     setUiHousing(s.housingUsed);
     setUiLog([...s.log]);
+    setUiClassCounts({ ...s.classCounts });
+    setUiMasterPool([...s.masterPool]);
+    setUiTraining(s.training.length);
+    setUiGuests([...s.guests]);
     if (s.gameOver) {
       setGameOver(true);
       setGameOverReason(s.gameOverReason);
@@ -91,6 +101,10 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       if (!s.gameOver && s.speed > 0) {
         const interval = TICK_MS / s.speed;
         if (now - lastTick >= interval) {
+          // seed agents when first house is built
+          if (s.agents.length === 0 && s.buildings.some((b) => b.built && BUILDINGS[b.typeId].housing)) {
+            seedAgents(s);
+          }
           tick(s);
           lastTick = now;
           syncUi();
@@ -291,16 +305,24 @@ export default function GameView({ difficulty, onExit }: GameViewProps) {
       </div>
 
       {/* Left: build menu */}
-      <div className="absolute left-3 top-24 pointer-events-auto">
+      <div className="absolute left-3 top-24 pointer-events-auto flex flex-col gap-3">
         <BuildMenu
           resources={uiResources}
           selected={buildType}
           onSelect={selectBuild}
         />
+        <SocietyPanel
+          classCounts={uiClassCounts}
+          masterPool={uiMasterPool}
+          trainingCount={uiTraining}
+          onTrain={() => { startTraining(stateRef.current); syncUi(); }}
+          canTrain={uiClassCounts.smerd > 0 && uiResources.food >= 16}
+        />
       </div>
 
-      {/* Right: event log */}
-      <div className="absolute right-3 top-24 pointer-events-auto">
+      {/* Right: event log + guests */}
+      <div className="absolute right-3 top-24 pointer-events-auto flex flex-col gap-3">
+        {uiGuests.length > 0 && <GuestsPanel guests={uiGuests} />}
         <EventLog log={uiLog} />
       </div>
 

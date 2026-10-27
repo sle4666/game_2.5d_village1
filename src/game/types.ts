@@ -11,7 +11,7 @@ export type ResourceId =
 export interface ResourceInfo {
   id: ResourceId;
   name: string;
-  icon: string; // emoji-free glyph name
+  icon: string;
   color: string;
 }
 
@@ -29,6 +29,22 @@ export interface DifficultyConfig {
   description: string;
 }
 
+// --- Society: citizen classes ---
+export type CitizenClass = 'smerd' | 'craftsman' | 'otrok' | 'volkhv';
+
+export interface ClassInfo {
+  id: CitizenClass;
+  name: string;
+  pluralName: string;
+  color: string;
+  canBuild: boolean; // can do basic construction/logistics
+  canFight: boolean;
+  canRitual: boolean;
+  canCraft: boolean; // can work advanced production
+  description: string;
+}
+
+// --- Buildings ---
 export type BuildingTypeId =
   | 'house'
   | 'woodcutter'
@@ -39,7 +55,9 @@ export type BuildingTypeId =
   | 'smithy'
   | 'warehouse'
   | 'sanctuary'
-  | 'palisade';
+  | 'palisade'
+  | 'school'
+  | 'tavern';
 
 export interface BuildingType {
   id: BuildingTypeId;
@@ -49,12 +67,16 @@ export interface BuildingType {
   size: { w: number; d: number };
   color: string;
   roof: string;
-  category: 'housing' | 'production' | 'storage' | 'faith' | 'defense';
-  produces?: Partial<Record<ResourceId, number>>; // per game-tick
+  category: 'housing' | 'production' | 'storage' | 'faith' | 'defense' | 'civic';
+  produces?: Partial<Record<ResourceId, number>>;
   consumes?: Partial<Record<ResourceId, number>>;
   housing?: number;
   faith?: number;
   buildTicks: number;
+  requiresMaster?: boolean; // needs a craftsman/volkhv to operate
+  masterClass?: CitizenClass; // which class masters it
+  storesResources?: boolean; // warehouse — source for construction materials
+  guestCapacity?: number; // tavern — houses guests
 }
 
 export interface PlacedBuilding {
@@ -64,6 +86,42 @@ export interface PlacedBuilding {
   tileY: number;
   progress: number; // 0..1
   built: boolean;
+  hasMaster: boolean; // a master is assigned (for requiresMaster buildings)
+  storedMaterials: Partial<Record<ResourceId, number>>; // materials delivered to site
+  neededMaterials: Partial<Record<ResourceId, number>>; // what's still needed
+}
+
+// --- Physical builder agents ---
+export type AgentState = 'idle' | 'toSite' | 'working' | 'returning';
+
+export interface Agent {
+  uid: number;
+  homeUid: number; // building the agent lives in
+  state: AgentState;
+  // pixel-space interpolated position (in tile coords for logic)
+  tileX: number;
+  tileY: number;
+  // target
+  targetUid: number; // building heading to
+  // carrying
+  carrying: Partial<Record<ResourceId, number>>;
+  classId: CitizenClass;
+  // animation
+  phase: number; // 0..1 walk cycle
+  jobType: 'builder' | 'worker' | 'hauler';
+  assignedBuildingUid: number; // production building worked at (for workers)
+}
+
+// --- Guests (envoys, merchants, refugees) ---
+export interface Guest {
+  uid: number;
+  name: string;
+  kind: 'envoy' | 'merchant' | 'refugee';
+  origin: string; // faction name
+  arrivesInDays: number;
+  stayingDays: number;
+  housed: boolean;
+  threatOnDeath: string; // consequence if they die
 }
 
 export type GameScreen = 'menu' | 'game';
