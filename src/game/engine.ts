@@ -769,6 +769,9 @@ export function placeBridgeSpan(
   }
   return placed;
 }
+
+// Recompute class counts from agents (for UI).
+export function recomputeClasses(state: GameState) {
   state.classCounts = { smerd: 0, craftsman: 0, otrok: 0, volkhv: 0 };
   for (const a of state.agents) {
     state.classCounts[a.classId]++;

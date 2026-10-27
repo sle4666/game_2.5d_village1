@@ -99,7 +99,7 @@ export function startAmbient(): void {
   lfo.start();
   state.ambientNodes = [noise, lfo, windFilter, windGain, lfoGain];
   // Store interval for cleanup
-  (state as unknown as { chirpInterval: number }).chirpInterval = chirpInterval;
+  (state as unknown as { chirpInterval: ReturnType<typeof setInterval> }).chirpInterval = chirpInterval;
 }
 
 export function startMusic(): void {

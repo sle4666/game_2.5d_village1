@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Trees, Scroll, Settings, LogOut, Flame, Swords, Shield } from 'lucide-react';
 import type { DifficultyId } from '@/game/types';
 import { DIFFICULTIES } from '@/game/constants';
+import SettingsPanel from './SettingsPanel';
+import { initAudio } from '@/game/AudioSystem';
 
 interface MainMenuProps {
   onStart: (difficulty: DifficultyId) => void;
@@ -16,6 +18,7 @@ const DIFFICULTY_ICONS: Record<DifficultyId, typeof Trees> = {
 export default function MainMenu({ onStart }: MainMenuProps) {
   const [showDifficulty, setShowDifficulty] = useState(false);
   const [selected, setSelected] = useState<DifficultyId | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="parchment-bg min-h-screen w-full flex items-center justify-center relative overflow-hidden">
@@ -62,7 +65,7 @@ export default function MainMenu({ onStart }: MainMenuProps) {
             <div className="flex flex-col gap-3">
               <MenuButton icon={Flame} label="Начать игру" onClick={() => setShowDifficulty(true)} primary />
               <MenuButton icon={Scroll} label="Загрузить игру" onClick={() => {}} disabled />
-              <MenuButton icon={Settings} label="Настройки" onClick={() => {}} disabled />
+              <MenuButton icon={Settings} label="Настройки" onClick={() => { initAudio(); setShowSettings(true); }} />
               <MenuButton icon={LogOut} label="Выйти" onClick={() => window.close()} />
             </div>
           ) : (
@@ -118,6 +121,10 @@ export default function MainMenu({ onStart }: MainMenuProps) {
           Прототип · Управление: WASD — камера, колесо — зум
         </p>
       </div>
+
+      {showSettings && (
+        <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 }
