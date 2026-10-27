@@ -23,7 +23,8 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [canLoad, setCanLoad] = useState(false);
   const [hills, setHills] = useState(50);
-  const [rivers, setRivers] = useState(50);
+  // rivers: integer 0–5
+  const [rivers, setRivers] = useState(2);
 
   useEffect(() => {
     setCanLoad(hasSave());
@@ -31,11 +32,14 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
 
   const handleStart = () => {
     if (!selected) return;
-    onStart(selected, { hills: hills / 100, rivers: rivers / 100 });
+    onStart(selected, {
+      hills: hills / 100,
+      rivers: rivers / 5,  // normalize 0–5 → 0–1
+    });
   };
 
   return (
-    <div className="parchment-bg min-h-screen w-full flex items-center justify-center relative overflow-hidden">
+    <div className="parchment-bg min-h-screen w-full flex items-center justify-center relative overflow-y-auto py-8">
       <div className="absolute inset-0 pointer-events-none">
         {Array.from({ length: 18 }).map((_, i) => (
           <div
@@ -53,7 +57,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
       </div>
 
       <div className="relative z-10 w-full max-w-2xl px-6">
-        <div className="text-center mb-10 animate-float-in">
+        <div className="text-center mb-8 animate-float-in">
           <div className="flex items-center justify-center gap-3 text-amber-500/70 mb-2">
             <Trees size={28} />
             <span className="tracking-[0.4em] text-xs uppercase">Стратегия выживания</span>
@@ -65,7 +69,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
           <h2 className="font-display text-4xl md:text-5xl font-semibold text-amber-200/80 leading-tight">
             Первозданного Леса
           </h2>
-          <p className="mt-4 text-stone-400 text-sm max-w-md mx-auto leading-relaxed">
+          <p className="mt-3 text-stone-400 text-sm max-w-md mx-auto leading-relaxed">
             Построй деревню в суровом лесу, переживи ледяные зимы и веди
             дипломатию с племенами и древними духами.
           </p>
@@ -82,6 +86,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
           ) : (
             <div className="flex flex-col gap-4">
               <h3 className="font-display text-2xl text-amber-100 text-center">Выберите судьбу</h3>
+
               <div className="flex flex-col gap-3">
                 {(Object.keys(DIFFICULTIES) as DifficultyId[]).map((id) => {
                   const d = DIFFICULTIES[id];
@@ -119,29 +124,42 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
                   icon={Mountain}
                   label="Гористость"
                   value={hills}
+                  min={0}
+                  max={100}
+                  step={1}
                   onChange={setHills}
                   leftLabel="Равнина"
                   rightLabel="Горы"
+                  displayValue={String(hills)}
                 />
                 <SliderRow
                   icon={Waves}
                   label="Количество рек"
                   value={rivers}
+                  min={0}
+                  max={5}
+                  step={1}
                   onChange={setRivers}
-                  leftLabel="Мало"
-                  rightLabel="Много"
+                  leftLabel="0"
+                  rightLabel="5"
+                  displayValue={String(rivers)}
                 />
               </div>
 
-              <div className="flex gap-3 mt-2">
+              {/* Action buttons — always visible at the bottom */}
+              <div className="flex gap-3 pt-1">
                 <button
-                  className="btn-rune rounded-lg py-2 px-4 text-stone-300 flex-1"
+                  className="btn-rune rounded-lg py-3 px-4 text-stone-300 flex-1 text-base"
                   onClick={() => { setShowDifficulty(false); setSelected(null); }}
                 >
                   Назад
                 </button>
                 <button
-                  className="btn-rune rounded-lg py-2 px-4 text-amber-100 flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`rounded-lg py-3 px-4 flex-1 text-base font-semibold transition-all border ${
+                    selected
+                      ? 'bg-amber-800/70 hover:bg-amber-700/70 border-amber-500/60 text-amber-100 hover:border-amber-400/80'
+                      : 'bg-stone-800/40 border-stone-700/40 text-stone-500 cursor-not-allowed'
+                  }`}
                   disabled={!selected}
                   onClick={handleStart}
                 >
@@ -152,7 +170,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
           )}
         </div>
 
-        <p className="text-center text-stone-600 text-xs mt-6">
+        <p className="text-center text-stone-600 text-xs mt-6 pb-4">
           Прототип · Управление: WASD — камера, колесо — зум
         </p>
       </div>
@@ -168,28 +186,37 @@ function SliderRow({
   icon: Icon,
   label,
   value,
+  min,
+  max,
+  step,
   onChange,
   leftLabel,
   rightLabel,
+  displayValue,
 }: {
   icon: typeof Mountain;
   label: string;
   value: number;
+  min: number;
+  max: number;
+  step: number;
   onChange: (v: number) => void;
   leftLabel: string;
   rightLabel: string;
+  displayValue: string;
 }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 text-stone-300 text-sm">
         <Icon size={14} className="text-amber-400/70" />
         <span className="flex-1">{label}</span>
-        <span className="text-amber-200/80 tabular-nums text-xs">{value}</span>
+        <span className="text-amber-200/80 tabular-nums text-sm font-medium w-6 text-right">{displayValue}</span>
       </div>
       <input
         type="range"
-        min={0}
-        max={100}
+        min={min}
+        max={max}
+        step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full accent-amber-600 h-1.5"
