@@ -10,8 +10,8 @@ import type {
   Season,
 } from './types';
 
-export const GRID_W = 28;
-export const GRID_D = 28;
+export const GRID_W = 80;
+export const GRID_D = 80;
 export const TILE_W = 64;
 export const TILE_H = 32;
 
@@ -305,6 +305,19 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
     buildTicks: 9,
     guestCapacity: 3,
   },
+  bridge: {
+    id: 'bridge',
+    name: 'Мост',
+    description: 'Деревянный настил через реку. Строится только на воде.',
+    cost: { wood: 20 },
+    size: { w: 1, d: 1 },
+    color: '#7a5a34',
+    roof: '#5a3f20',
+    category: 'storage',
+    buildTicks: 5,
+    waterOnly: true,
+    isBridge: true,
+  },
 };
 
 export const BUILD_CATEGORIES: {
@@ -318,7 +331,7 @@ export const BUILD_CATEGORIES: {
     name: 'Производство',
     types: ['woodcutter', 'quarry', 'mine', 'huntersHut', 'farm', 'smithy'],
   },
-  { id: 'storage', name: 'Логистика', types: ['warehouse'] },
+  { id: 'storage', name: 'Логистика', types: ['warehouse', 'bridge'] },
   { id: 'faith', name: 'Религия', types: ['sanctuary'] },
   { id: 'defense', name: 'Защита', types: ['palisade'] },
   { id: 'civic', name: 'Общество', types: ['school', 'tavern'] },

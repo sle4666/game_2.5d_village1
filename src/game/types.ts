@@ -57,7 +57,8 @@ export type BuildingTypeId =
   | 'sanctuary'
   | 'palisade'
   | 'school'
-  | 'tavern';
+  | 'tavern'
+  | 'bridge';
 
 export interface BuildingType {
   id: BuildingTypeId;
@@ -77,6 +78,8 @@ export interface BuildingType {
   masterClass?: CitizenClass; // which class masters it
   storesResources?: boolean; // warehouse — source for construction materials
   guestCapacity?: number; // tavern — houses guests
+  waterOnly?: boolean; // bridge — can only be placed on water tiles
+  isBridge?: boolean; // render hint
 }
 
 export interface PlacedBuilding {

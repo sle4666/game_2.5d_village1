@@ -26,6 +26,7 @@ import {
   isWinter,
 } from './constants';
 import { inBounds } from './iso';
+import { isWater } from './iso';
 
 export interface GameState {
   difficulty: DifficultyConfig;
@@ -122,6 +123,9 @@ export function canPlace(state: GameState, type: BuildingType, tileX: number, ti
       const y = tileY + dy;
       if (!inBounds(x, y)) return false;
       if (state.occupied[x][y]) return false;
+      const water = isWater(x, y);
+      if (type.waterOnly && !water) return false; // bridge: only on water
+      if (!type.waterOnly && water) return false; // normal buildings: not on water
     }
   }
   return true;
@@ -324,7 +328,9 @@ function onAgentArrive(state: GameState, a: Agent, target: PlacedBuilding) {
   a.targetUid = -1;
 }
 
-// Progress construction for agents in "working" state at sites with all materials.
+// Progress construction every tick: baseline time-based growth, boosted by
+// on-site agents. This guarantees the first house completes even before agents
+// are seeded (agents are spawned only after a house is built).
 function advanceConstruction(state: GameState) {
   for (const b of state.buildings) {
     if (b.built) continue;
@@ -332,9 +338,12 @@ function advanceConstruction(state: GameState) {
     const workers = state.agents.filter(
       (a) => a.targetUid === b.uid && a.state === 'working'
     );
-    if (workers.length === 0) continue;
-    if (hasUnmetMaterials(b)) continue;
-    b.progress += workers.length / t.buildTicks;
+    // baseline: always advances by time; agents speed it up.
+    const workerBoost = 1 + workers.length;
+    // if materials are required and unmet, agents must still deliver, but the
+    // baseline keeps ticking slowly so early-game isn't deadlocked.
+    const matPenalty = hasUnmetMaterials(b) ? 0.4 : 1;
+    b.progress += (workerBoost * matPenalty) / t.buildTicks;
     if (b.progress >= 1) {
       b.progress = 1;
       b.built = true;

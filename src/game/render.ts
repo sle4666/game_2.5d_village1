@@ -7,7 +7,7 @@ import {
   BUILDINGS,
   CLASSES,
 } from './constants';
-import { tileDecoration, tileHeight, tileToScreen, type CameraView } from './iso';
+import { tileDecoration, tileHeight, tileToScreen, isWater, type CameraView } from './iso';
 import type { GameState } from './engine';
 import type { Agent, BuildingType, PlacedBuilding, Season } from './types';
 
@@ -141,10 +141,34 @@ function drawTile(
 ) {
   const { ctx, view } = rc;
   const sinfo = SEASON_INFO[state.season];
-  const h = tileHeight(x, y);
+  const water = isWater(x, y);
+  const h = water ? 0 : tileHeight(x, y);
   const p = tileToScreen(x, y, view);
   const cx = p.x;
   const cy = p.y - h * view.zoom;
+
+  // --- Water tiles: flat, blue, with ripple ---
+  if (water) {
+    const ripple = (Math.sin(x * 1.3 + y * 0.7 + state.tick * 0.15) + 1) * 0.5;
+    const iceR = state.season === 'winter' ? 235 : 90 + ripple * 30;
+    const iceG = state.season === 'winter' ? 240 : 140 + ripple * 30;
+    const iceB = state.season === 'winter' ? 245 : 190 + ripple * 25;
+    ctx.fillStyle = `rgb(${iceR},${iceG},${iceB})`;
+    tileDiamondPath(ctx, cx, cy);
+    ctx.fill();
+    // subtle ripple lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1;
+    tileDiamondPath(ctx, cx, cy);
+    ctx.stroke();
+    // hover highlight
+    if (rc.hoverTile && rc.hoverTile.x === x && rc.hoverTile.y === y && !rc.ghostType) {
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      tileDiamondPath(ctx, cx, cy);
+      ctx.fill();
+    }
+    return;
+  }
 
   // base ground color with slight per-tile variation
   const variance = (Math.sin(x * 3.1 + y * 1.7) + 1) * 0.5;
@@ -161,10 +185,7 @@ function drawTile(
 
   // tile left/right walls (for height)
   if (h > 0.5) {
-    ctx.fillStyle = darken(base.replace('rgb', 'rgb').replace(')', '') as unknown as string, 0.7);
-    // simpler: use a fixed darker tone
     ctx.fillStyle = `rgba(60,50,40,0.5)`;
-    // left wall
     ctx.beginPath();
     ctx.moveTo(cx - TILE_W / 2, cy);
     ctx.lineTo(cx, cy + TILE_H / 2);
@@ -172,7 +193,6 @@ function drawTile(
     ctx.lineTo(cx - TILE_W / 2, cy + h * view.zoom);
     ctx.closePath();
     ctx.fill();
-    // right wall
     ctx.fillStyle = `rgba(40,32,24,0.55)`;
     ctx.beginPath();
     ctx.moveTo(cx + TILE_W / 2, cy);
@@ -262,12 +282,64 @@ function drawBuilding(
 ) {
   const { ctx, view } = rc;
   const type = BUILDINGS[b.typeId];
+  const z = view.zoom;
+
+  // --- Bridge: flat wooden deck on water ---
+  if (type.isBridge) {
+    const p = tileToScreen(b.tileX, b.tileY, view);
+    const cx = p.x;
+    const cy = p.y;
+    const bw = TILE_W * 0.42 * z;
+    const bd = TILE_H * 0.42 * z;
+    const built = b.built;
+
+    // deck planks (two slopes of the diamond)
+    ctx.fillStyle = built ? '#7a5a34' : '#5a4226';
+    ctx.beginPath();
+    ctx.moveTo(cx - bw, cy);
+    ctx.lineTo(cx, cy + bd);
+    ctx.lineTo(cx, cy - bd);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = built ? '#6a4a2a' : '#4a3216';
+    ctx.beginPath();
+    ctx.moveTo(cx + bw, cy);
+    ctx.lineTo(cx, cy + bd);
+    ctx.lineTo(cx, cy - bd);
+    ctx.closePath();
+    ctx.fill();
+
+    // plank lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * bw * 0.3, cy - bd);
+      ctx.lineTo(cx + i * bw * 0.3, cy + bd);
+      ctx.stroke();
+    }
+
+    // support posts at corners
+    ctx.fillStyle = '#4a3216';
+    ctx.fillRect(cx - bw, cy - 3 * z, 2 * z, 6 * z);
+    ctx.fillRect(cx + bw - 2 * z, cy - 3 * z, 2 * z, 6 * z);
+
+    // construction progress bar
+    if (!built) {
+      const barW = bw * 1.4;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(cx - barW / 2, cy - 14 * z, barW, 4 * z);
+      ctx.fillStyle = '#7fd06a';
+      ctx.fillRect(cx - barW / 2, cy - 14 * z, barW * b.progress, 4 * z);
+    }
+    return;
+  }
+
   const h = tileHeight(b.tileX, b.tileY);
   const p = tileToScreen(b.tileX, b.tileY, view);
   const cx = p.x + ((type.size.w - type.size.d) * TILE_W) / 4 * view.zoom;
   const cy = p.y - h * view.zoom + ((type.size.w + type.size.d) * TILE_H) / 4 * view.zoom;
 
-  const z = view.zoom;
   const bw = type.size.w * TILE_W * 0.42 * z;
   const bd = type.size.d * TILE_H * 0.42 * z;
   const wallH = 22 * z * Math.max(1, (type.size.w + type.size.d) / 3);
