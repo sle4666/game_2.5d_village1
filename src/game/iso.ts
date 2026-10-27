@@ -9,9 +9,10 @@ export interface CameraView {
 export function tileToScreen(tileX: number, tileY: number, view: CameraView) {
   const sx = (tileX - tileY) * (TILE_W / 2);
   const sy = (tileX + tileY) * (TILE_H / 2);
+  // Round to integer pixels to prevent sub-pixel shimmering between frames.
   return {
-    x: sx * view.zoom + view.x,
-    y: sy * view.zoom + view.y,
+    x: Math.round(sx * view.zoom + view.x),
+    y: Math.round(sy * view.zoom + view.y),
   };
 }
 

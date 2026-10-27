@@ -123,8 +123,8 @@ export default function GameView({ difficulty, onExit, loadedState }: GameViewPr
       const view = viewRef.current;
       const keys = keysRef.current;
       const moveSpeed = 8 / view.zoom;
-      if (keys.has('w') || keys.has('arrowup')) view.y += moveSpeed;
-      if (keys.has('s') || keys.has('arrowdown')) view.y -= moveSpeed;
+      if (keys.has('w') || keys.has('arrowup')) view.y -= moveSpeed;
+      if (keys.has('s') || keys.has('arrowdown')) view.y += moveSpeed;
       if (keys.has('a') || keys.has('arrowleft')) view.x += moveSpeed;
       if (keys.has('d') || keys.has('arrowright')) view.x -= moveSpeed;
 
