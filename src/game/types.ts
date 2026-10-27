@@ -29,6 +29,12 @@ export interface DifficultyConfig {
   description: string;
 }
 
+// --- Terrain config (set at game creation) ---
+export interface TerrainConfig {
+  hills: number; // 0..1
+  rivers: number; // 0..1
+}
+
 // --- Society: citizen classes ---
 export type CitizenClass = 'smerd' | 'craftsman' | 'otrok' | 'volkhv';
 
@@ -95,7 +101,7 @@ export interface PlacedBuilding {
 }
 
 // --- Physical builder agents ---
-export type AgentState = 'idle' | 'toSite' | 'working' | 'returning';
+export type AgentState = 'idle' | 'toSite' | 'working' | 'returning' | 'goingToGather' | 'gathering' | 'delivering';
 
 export interface Agent {
   uid: number;
@@ -114,6 +120,11 @@ export interface Agent {
   jobType: 'builder' | 'worker' | 'hauler';
   assignedBuildingUid: number; // production building worked at (for workers)
   path: { x: number; y: number }[]; // A* path waypoints
+  // resource gathering
+  gatherTargetX: number; // tile coords of resource node
+  gatherTargetY: number;
+  gatherTimer: number; // ticks remaining at gather site
+  gatherResource: ResourceId | null; // which resource this agent is gathering
 }
 
 // --- Guests (envoys, merchants, refugees) ---

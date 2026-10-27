@@ -25,7 +25,20 @@ import {
   TICKS_PER_DAY,
   isWinter,
 } from './constants';
-import { inBounds, isWater, findPath, collectBridgeTiles, setMapSeed } from './iso';
+import { inBounds, isWater, findPath, collectBridgeTiles, setMapSeed, setTerrainConfig, findNearestDecoration, hashRand, type TerrainConfig } from './iso';
+import type {
+  Agent,
+  AgentState,
+  BuildingType,
+  BuildingTypeId,
+  CitizenClass,
+  DifficultyConfig,
+  Guest,
+  PlacedBuilding,
+  ResourceId,
+  Season,
+  TerrainConfig as TerrainConfigType,
+} from './types';
 
 // Sound event callback — set by GameView to bridge engine -> AudioSystem.
 export type SoundCallback = (event: 'placeBuilding' | 'buildingFinished' | 'winterComes' | 'guestArrives' | 'starvation' | 'trainingComplete') => void;
@@ -64,6 +77,7 @@ export interface GameState {
   masterPool: { classId: CitizenClass }[];
   guestCooldown: number;
   mapSeed: number;
+  terrain: TerrainConfigType;
 }
 
 function emptyGrid<T>(value: T): T[][] {
@@ -78,8 +92,7 @@ function emptyGrid<T>(value: T): T[][] {
 
 function decorationFor(x: number, y: number, seed: number): 'tree' | 'rock' | null {
   if (x < 1 || y < 1 || x > GRID_W - 2 || y > GRID_D - 2) return null;
-  const n = Math.sin((x + seed * 0.37) * 12.9898 + (y + seed * 0.53) * 78.233) * 43758.5453;
-  const v = n - Math.floor(n);
+  const v = hashRand(x, y, seed);
   const distFromCenter = Math.abs(x - GRID_W / 2) + Math.abs(y - GRID_D / 2);
   if (distFromCenter < 5) return null;
   if (v > 0.86) return 'tree';
@@ -87,8 +100,12 @@ function decorationFor(x: number, y: number, seed: number): 'tree' | 'rock' | nu
   return null;
 }
 
-export function createGame(difficultyId: string): GameState {
+export function createGame(
+  difficultyId: string,
+  terrain?: TerrainConfig
+): GameState {
   const difficulty = DIFFICULTIES[difficultyId as keyof typeof DIFFICULTIES] ?? DIFFICULTIES.normal;
+  const terrainCfg: TerrainConfigType = terrain ?? { hills: 0.5, rivers: 0.5 };
   const resources: Record<ResourceId, number> = {
     wood: 0, stone: 0, ore: 0, food: 0, skins: 0, faith: 0, gold: 0, workers: 0,
   };
@@ -96,9 +113,10 @@ export function createGame(difficultyId: string): GameState {
     const v = difficulty.startResources[id];
     if (v) resources[id] = v;
   }
-  // Random map seed for procedural terrain.
+  // Random map seed — generated exactly once, before any terrain call.
   const mapSeed = Math.floor(Math.random() * 10000);
   setMapSeed(mapSeed);
+  setTerrainConfig(terrainCfg);
 
   const decorations: ('tree' | 'rock' | null)[][] = emptyGrid(null);
   for (let x = 0; x < GRID_W; x++) {
@@ -130,6 +148,7 @@ export function createGame(difficultyId: string): GameState {
     masterPool: [],
     guestCooldown: 0,
     mapSeed,
+    terrain: terrainCfg,
   };
 }
 
@@ -253,14 +272,167 @@ function hasUnmetMaterials(b: PlacedBuilding): boolean {
   return false;
 }
 
-// Move agents toward their target building tile using A* pathfinding.
+// --- Resource gathering: production buildings spawn agents to gather ---
+
+const GATHER_RADIUS = 15;
+const GATHER_TICKS = 5;
+const GATHER_ARRIVAL = 0.2;
+
+// Map building type to which decoration it gathers from.
+function buildingGatherType(typeId: BuildingTypeId): 'tree' | 'rock' | null {
+  if (typeId === 'woodcutter' || typeId === 'huntersHut') return 'tree';
+  if (typeId === 'quarry' || typeId === 'mine') return 'rock';
+  return null;
+}
+
+function buildingProduces(typeId: BuildingTypeId): ResourceId | null {
+  const t = BUILDINGS[typeId];
+  if (!t.produces) return null;
+  for (const [id] of Object.entries(t.produces)) {
+    return id as ResourceId;
+  }
+  return null;
+}
+
+function assignGatherers(state: GameState) {
+  for (const b of state.buildings) {
+    if (!b.built) continue;
+    const gatherType = buildingGatherType(b.typeId);
+    if (!gatherType) continue;
+    // Check if we already have a gatherer assigned to this building.
+    const existing = state.agents.filter(
+      (a) => a.assignedBuildingUid === b.uid && a.state === 'goingToGather'
+    );
+    if (existing.length >= 1) continue;
+    // Find an idle worker assigned to this building.
+    const worker = state.agents.find(
+      (a) => a.assignedBuildingUid === b.uid && a.state === 'working' && a.classId === 'smerd'
+    );
+    if (!worker) continue;
+    // Find nearest decoration tile.
+    const target = findNearestDecoration(
+      b.tileX, b.tileY, gatherType, GATHER_RADIUS, state.mapSeed, state.decorations
+    );
+    if (!target) continue;
+    worker.state = 'goingToGather';
+    worker.gatherTargetX = target.x;
+    worker.gatherTargetY = target.y;
+    worker.gatherResource = buildingProduces(b.typeId);
+    worker.gatherTimer = GATHER_TICKS;
+    worker.path = [];
+  }
+}
+
+function moveAlongPath(a: Agent, speed: number) {
+  if (a.path.length === 0) return;
+  const wp = a.path[0];
+  const wdx = wp.x - a.tileX;
+  const wdy = wp.y - a.tileY;
+  const wdist = Math.sqrt(wdx * wdx + wdy * wdy);
+  if (wdist < speed * 1.5) {
+    a.tileX = wp.x;
+    a.tileY = wp.y;
+    a.path.shift();
+  } else {
+    a.tileX += (wdx / wdist) * speed;
+    a.tileY += (wdy / wdist) * speed;
+  }
+}
+
+// Move agents toward their target building tile or gather site using A*.
 function moveAgents(state: GameState) {
   const bridgeTiles = collectBridgeTiles(
     state.buildings.filter((b) => BUILDINGS[b.typeId].isBridge)
   );
   for (let i = state.agents.length - 1; i >= 0; i--) {
     const a = state.agents[i];
-    if (a.state === 'idle' || a.state === 'working') continue;
+    if (a.state === 'idle') continue;
+
+    const winter = isWinter(state.season);
+    const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
+
+    // --- Gathering states ---
+    if (a.state === 'goingToGather') {
+      const tx = a.gatherTargetX;
+      const ty = a.gatherTargetY;
+      const dx = tx - a.tileX;
+      const dy = ty - a.tileY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      a.phase = (a.phase + speed) % 1;
+      if (dist < GATHER_ARRIVAL) {
+        a.state = 'gathering';
+        a.gatherTimer = GATHER_TICKS;
+        continue;
+      }
+      if (a.path.length === 0) {
+        const path = findPath(
+          Math.round(a.tileX), Math.round(a.tileY),
+          tx, ty,
+          bridgeTiles, state.occupied
+        );
+        a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
+      }
+      moveAlongPath(a, speed);
+      continue;
+    }
+
+    if (a.state === 'gathering') {
+      a.gatherTimer -= 1;
+      if (a.gatherTimer <= 0) {
+        // Done gathering — head back to building to deliver.
+        const b = state.buildings.find((bl) => bl.uid === a.assignedBuildingUid);
+        if (b) {
+          a.state = 'delivering';
+          a.targetUid = b.uid;
+          a.path = [];
+          if (a.gatherResource) {
+            a.carrying = { [a.gatherResource]: 1 };
+          }
+        } else {
+          a.state = 'returning';
+          a.targetUid = a.homeUid > 0 ? a.homeUid : -1;
+          a.path = [];
+        }
+      }
+      continue;
+    }
+
+    if (a.state === 'delivering') {
+      const target = state.buildings.find((b) => b.uid === a.targetUid);
+      if (!target) { a.state = 'returning'; a.targetUid = a.homeUid > 0 ? a.homeUid : -1; a.path = []; continue; }
+      const tType = BUILDINGS[target.typeId];
+      const tx = target.tileX + tType.size.w / 2;
+      const ty = target.tileY + tType.size.d / 2;
+      const dx = tx - a.tileX;
+      const dy = ty - a.tileY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      a.phase = (a.phase + speed) % 1;
+      if (dist < GATHER_ARRIVAL) {
+        // Deliver resource to warehouse/building, add to stockpile.
+        if (a.carrying && a.gatherResource) {
+          const amt = a.carrying[a.gatherResource] ?? 0;
+          if (amt > 0) {
+            state.resources[a.gatherResource] += amt;
+          }
+        }
+        a.carrying = {};
+        a.state = 'working';
+        a.path = [];
+        continue;
+      }
+      if (a.path.length === 0) {
+        const path = findPath(
+          Math.round(a.tileX), Math.round(a.tileY),
+          Math.round(tx), Math.round(ty),
+          bridgeTiles, state.occupied
+        );
+        a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
+      }
+      moveAlongPath(a, speed);
+      continue;
+    }
+
+    if (a.state === 'working') continue;
 
     // Returning agents head to village center; despawn on arrival.
     if (a.state === 'returning') {
@@ -357,20 +529,9 @@ function moveAgents(state: GameState) {
     if (dist < ARRIVAL_RADIUS) {
       onAgentArrive(state, a, target);
     } else {
-      const wp = a.path[0];
-      const wdx = wp.x - a.tileX;
-      const wdy = wp.y - a.tileY;
-      const wdist = Math.sqrt(wdx * wdx + wdy * wdy);
-      if (wdist < speed * 1.5) {
-        a.tileX = wp.x;
-        a.tileY = wp.y;
-        a.path.shift();
-        if (a.path.length === 0 && dist < ARRIVAL_RADIUS * 2) {
-          onAgentArrive(state, a, target);
-        }
-      } else {
-        a.tileX += (wdx / wdist) * speed;
-        a.tileY += (wdy / wdist) * speed;
+      moveAlongPath(a, speed);
+      if (a.path.length === 0 && dist < ARRIVAL_RADIUS * 2) {
+        onAgentArrive(state, a, target);
       }
     }
   }
@@ -501,6 +662,7 @@ export function tick(state: GameState): GameState {
 
   assignBuilders(state);
   assignWorkers(state);
+  assignGatherers(state);
   moveAgents(state);
   advanceConstruction(state);
 
@@ -554,11 +716,26 @@ function applyDailyProduction(state: GameState) {
     }
   }
   const availableWorkers = state.agents.filter(
-    (a) => a.assignedBuildingUid > 0 && a.state !== 'idle'
+    (a) => a.assignedBuildingUid > 0 && (a.state === 'working' || a.state === 'goingToGather' || a.state === 'gathering' || a.state === 'delivering')
   ).length;
   const workerRatio = workerDemand === 0 ? 1 : Math.min(1, availableWorkers / workerDemand);
+  // Buildings with gatherers produce less abstractly — agents deliver resources physically.
+  const gatheringBuildings = new Set(
+    state.agents
+      .filter((a) => a.state === 'goingToGather' || a.state === 'gathering' || a.state === 'delivering')
+      .map((a) => a.assignedBuildingUid)
+  );
   for (const id of RESOURCE_ORDER) {
-    if (gains[id]) state.resources[id] += (gains[id] ?? 0) * workerRatio;
+    let totalGain = (gains[id] ?? 0) * workerRatio;
+    // Reduce abstract production for buildings that have active gatherers.
+    for (const b of state.buildings) {
+      if (!b.built || !gatheringBuildings.has(b.uid)) continue;
+      const t = BUILDINGS[b.typeId];
+      if (t.produces && t.produces[id]) {
+        totalGain -= (t.produces[id] ?? 0) * workerRatio * 0.5;
+      }
+    }
+    if (totalGain > 0) state.resources[id] += totalGain;
   }
   for (const id of Object.keys(costs) as ResourceId[]) {
     state.resources[id] = Math.max(0, state.resources[id] - (costs[id] ?? 0) * workerRatio);
@@ -751,6 +928,10 @@ function makeAgent(
     jobType: classId === 'otrok' ? 'worker' : 'builder',
     assignedBuildingUid: 0,
     path: [],
+    gatherTargetX: 0,
+    gatherTargetY: 0,
+    gatherTimer: 0,
+    gatherResource: null,
   };
 }
 

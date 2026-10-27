@@ -32,11 +32,18 @@ export function inBounds(tileX: number, tileY: number): boolean {
   return tileX >= 0 && tileY >= 0 && tileX < GRID_W && tileY < GRID_D;
 }
 
+// --- Terrain config ---
+export interface TerrainConfig {
+  hills: number; // 0..1 (0 = flat, 1 = very hilly)
+  rivers: number; // 0..1 (0 = narrow straight, 1 = wide winding)
+}
+
+export const DEFAULT_TERRAIN: TerrainConfig = { hills: 0.5, rivers: 0.5 };
+
 // --- Seeded procedural terrain ---
-// All terrain functions use mapSeed as an offset so each new game
-// produces a different river, hills, and tree layout.
 
 let mapSeed = 0;
+let terrainCfg: TerrainConfig = DEFAULT_TERRAIN;
 
 export function setMapSeed(seed: number): void {
   mapSeed = seed;
@@ -44,6 +51,14 @@ export function setMapSeed(seed: number): void {
 
 export function getMapSeed(): number {
   return mapSeed;
+}
+
+export function setTerrainConfig(cfg: TerrainConfig): void {
+  terrainCfg = cfg;
+}
+
+export function getTerrainConfig(): TerrainConfig {
+  return terrainCfg;
 }
 
 // Deterministic integer hash PRNG. Stable across frames — no floating-point
@@ -60,8 +75,7 @@ function seededRand(x: number, y: number): number {
   return hashRand(x, y, mapSeed);
 }
 
-// Superposition of sinusoids: rolling hills + a central ridge + lowlands.
-// All sinusoids are offset by mapSeed so terrain varies per game.
+// Rolling hills + central ridge + lowlands, scaled by hills config.
 export function tileHeight(tileX: number, tileY: number): number {
   const nx = tileX / GRID_W - 0.5;
   const ny = tileY / GRID_D - 0.5;
@@ -73,26 +87,37 @@ export function tileHeight(tileX: number, tileY: number): number {
     Math.sin((tileX + s * 2) * 0.13) * 1.4 +
     Math.cos((tileY + s * 0.7) * 0.19) * 1.2 +
     (1 - Math.sqrt(nx * nx + ny * ny) * 2) * 1.6;
-  return Math.max(0, h * 7);
+  // hills=0 → flat, hills=1 → full height, hills=0.5 → default
+  return Math.max(0, h * 7 * terrainCfg.hills * 2);
 }
 
-// A winding river: a sine-displaced vertical band crossing the map.
-// The river base position and waviness are offset by mapSeed.
-const RIVER_WIDTH = 4.5;
+// A winding river. Width and waviness scale with rivers config.
+const RIVER_BASE_WIDTH = 4.5;
+
+function riverWidth(): number {
+  // rivers=0 → very narrow (1.5), rivers=1 → wide (8), rivers=0.5 → default (4.75)
+  return 1.5 + terrainCfg.rivers * 6.5;
+}
+
+function riverWaviness(): number {
+  // rivers=0 → straight, rivers=1 → very winding
+  return terrainCfg.rivers * 2;
+}
 
 export function riverCenterX(tileY: number): number {
   const base = GRID_W * 0.3 + (mapSeed % (GRID_W * 0.4));
+  const w = riverWaviness();
   return (
     base +
-    Math.sin((tileY + mapSeed * 0.3) * 0.18) * 10 +
-    Math.cos((tileY + mapSeed * 0.15) * 0.07) * 6
+    Math.sin((tileY + mapSeed * 0.3) * 0.18) * 10 * w +
+    Math.cos((tileY + mapSeed * 0.15) * (0.07 + 0.06 * w)) * 6 * w
   );
 }
 
 export function isWater(tileX: number, tileY: number): boolean {
   const cx = riverCenterX(tileY);
   const dist = Math.abs(tileX - cx);
-  return dist < RIVER_WIDTH / 2;
+  return dist < riverWidth() / 2;
 }
 
 // Trees and rocks: seeded random, clustered near the river and in lowlands.
@@ -106,7 +131,6 @@ export function tileDecoration(tileX: number, tileY: number): 'tree' | 'rock' | 
   const h = tileHeight(tileX, tileY);
   const riverDist = Math.abs(tileX - riverCenterX(tileY));
 
-  // Trees favor lowlands (low height) and proximity to river.
   const lowlandBonus = h < 8 ? 0.06 : 0;
   const riverBonus = riverDist < 9 ? 0.05 : 0;
   const treeThreshold = 0.9 - lowlandBonus - riverBonus;
@@ -114,6 +138,35 @@ export function tileDecoration(tileX: number, tileY: number): 'tree' | 'rock' | 
   if (v > treeThreshold) return 'tree';
   if (v > 0.93 && h > 14) return 'rock';
   return null;
+}
+
+// Find nearest decoration tile of given type within radius.
+export function findNearestDecoration(
+  tileX: number,
+  tileY: number,
+  type: 'tree' | 'rock',
+  maxRadius: number,
+  seed: number,
+  decorations: ('tree' | 'rock' | null)[][]
+): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bestDist = Infinity;
+  for (let dx = -maxRadius; dx <= maxRadius; dx++) {
+    for (let dy = -maxRadius; dy <= maxRadius; dy++) {
+      const x = tileX + dx;
+      const y = tileY + dy;
+      if (!inBounds(x, y)) continue;
+      if (isWater(x, y)) continue;
+      const deco = decorations[x][y] ?? tileDecoration(x, y);
+      if (deco !== type) continue;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        best = { x, y };
+      }
+    }
+  }
+  return best;
 }
 
 // --- Pathfinding (A* on grid) ---
