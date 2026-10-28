@@ -36,8 +36,8 @@ function emitSound(event: Parameters<SoundCallback>[0]): void {
   if (soundCb) soundCb(event);
 }
 
-export const AGENT_SPEED = 0.18;
-const AGENT_SPEED_WINTER = 0.12;
+export const AGENT_SPEED = 0.5;
+const AGENT_SPEED_WINTER = 0.35;
 const GUEST_COOLDOWN_DAYS = 12;
 const ARRIVAL_RADIUS = 0.5;
 
@@ -112,7 +112,7 @@ export function createGame(
   }
   const classCounts: Record<CitizenClass, number> = { smerd: 0, craftsman: 0, otrok: 0, volkhv: 0 };
   classCounts.smerd = resources.workers;
-  return {
+  const state: GameState = {
     difficulty,
     resources,
     buildings: [],
@@ -138,6 +138,21 @@ export function createGame(
     mapSeed,
     terrain: terrainCfg,
   };
+
+  // Auto-place the Town Hall at the center of the map.
+  const townHall = BUILDINGS.town_hall;
+  const thX = Math.floor(GRID_W / 2) - Math.floor(townHall.size.w / 2);
+  const thY = Math.floor(GRID_D / 2) - Math.floor(townHall.size.d / 2);
+  const placed = placeBuildingInternal(state, 'town_hall', thX, thY);
+  if (placed) {
+    placed.built = true;
+    placed.progress = 1;
+    state.log.unshift('Ратуша возведена в центре поселения.');
+    if (state.log.length > 10) state.log.pop();
+    emitSound('buildingFinished');
+  }
+
+  return state;
 }
 
 // --- Placement ---
@@ -162,13 +177,25 @@ export function placeBuilding(
   tileX: number,
   tileY: number
 ): PlacedBuilding | null {
+  return placeBuildingInternal(state, typeId, tileX, tileY, true);
+}
+
+function placeBuildingInternal(
+  state: GameState,
+  typeId: BuildingTypeId,
+  tileX: number,
+  tileY: number,
+  chargeCost = false
+): PlacedBuilding | null {
   const type = BUILDINGS[typeId];
   if (!canPlace(state, type, tileX, tileY)) return null;
-  for (const [id, amount] of Object.entries(type.cost)) {
-    if (state.resources[id as ResourceId] < (amount ?? 0)) return null;
-  }
-  for (const [id, amount] of Object.entries(type.cost)) {
-    state.resources[id as ResourceId] -= amount ?? 0;
+  if (chargeCost) {
+    for (const [id, amount] of Object.entries(type.cost)) {
+      if (state.resources[id as ResourceId] < (amount ?? 0)) return null;
+    }
+    for (const [id, amount] of Object.entries(type.cost)) {
+      state.resources[id as ResourceId] -= amount ?? 0;
+    }
   }
   const neededMaterials: Partial<Record<ResourceId, number>> = {};
   for (const [id, amount] of Object.entries(type.cost)) {
@@ -186,6 +213,7 @@ export function placeBuilding(
     hasMaster: false,
     storedMaterials: {},
     neededMaterials,
+    level: type.level ?? 1,
   };
   for (let dx = 0; dx < type.size.w; dx++) {
     for (let dy = 0; dy < type.size.d; dy++) {
@@ -193,9 +221,11 @@ export function placeBuilding(
     }
   }
   state.buildings.push(b);
-  state.log.unshift(`Начато строительство: ${type.name}.`);
-  if (state.log.length > 10) state.log.pop();
-  emitSound('placeBuilding');
+  if (chargeCost) {
+    state.log.unshift(`Начато строительство: ${type.name}.`);
+    if (state.log.length > 10) state.log.pop();
+    emitSound('placeBuilding');
+  }
   return b;
 }
 
@@ -265,6 +295,8 @@ function hasUnmetMaterials(b: PlacedBuilding): boolean {
 const GATHER_RADIUS = 15;
 const GATHER_TICKS = 5;
 const GATHER_ARRIVAL = 0.2;
+const WORK_GATHER_TICKS = 20; // ticks for physical resource gathering
+const TOWN_HALL_DELIVER_RADIUS = 0.5;
 
 // Map building type to which decoration it gathers from.
 function buildingGatherType(typeId: BuildingTypeId): 'tree' | 'rock' | null {
@@ -282,6 +314,23 @@ function buildingProduces(typeId: BuildingTypeId): ResourceId | null {
   return null;
 }
 
+// Find the Town Hall — the central resource drop-off point.
+function findTownHall(state: GameState): PlacedBuilding | null {
+  return state.buildings.find((b) => b.typeId === 'town_hall' && b.built) ?? null;
+}
+
+function townHallCenter(state: GameState): { x: number; y: number } {
+  const th = findTownHall(state);
+  if (th) {
+    const t = BUILDINGS.town_hall;
+    return {
+      x: th.tileX + t.size.w / 2,
+      y: th.tileY + t.size.d / 2,
+    };
+  }
+  return { x: GRID_W / 2, y: GRID_D / 2 };
+}
+
 function assignGatherers(state: GameState) {
   for (const b of state.buildings) {
     if (!b.built) continue;
@@ -289,7 +338,7 @@ function assignGatherers(state: GameState) {
     if (!gatherType) continue;
     // Check if we already have a gatherer assigned to this building.
     const existing = state.agents.filter(
-      (a) => a.assignedBuildingUid === b.uid && a.state === 'goingToGather'
+      (a) => a.assignedBuildingUid === b.uid && (a.state === 'goingToGather' || a.state === 'going_to_work')
     );
     if (existing.length >= 1) continue;
     // Find an idle worker assigned to this building.
@@ -302,11 +351,11 @@ function assignGatherers(state: GameState) {
       b.tileX, b.tileY, gatherType, GATHER_RADIUS, state.mapSeed, state.decorations
     );
     if (!target) continue;
-    worker.state = 'goingToGather';
+    worker.state = 'going_to_work';
     worker.gatherTargetX = target.x;
     worker.gatherTargetY = target.y;
     worker.gatherResource = buildingProduces(b.typeId);
-    worker.gatherTimer = GATHER_TICKS;
+    worker.timer = 0;
     worker.path = [];
   }
 }
@@ -339,7 +388,131 @@ function moveAgents(state: GameState) {
     const winter = isWinter(state.season);
     const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
 
-    // --- Gathering states ---
+    // --- New physical gather loop: going_to_work → working → delivering → returning ---
+    if (a.state === 'going_to_work') {
+      const tx = a.gatherTargetX;
+      const ty = a.gatherTargetY;
+      const dx = tx - a.tileX;
+      const dy = ty - a.tileY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      a.phase = (a.phase + speed) % 1;
+      if (dist < GATHER_ARRIVAL) {
+        a.state = 'working';
+        a.timer = WORK_GATHER_TICKS;
+        a.path = [];
+        continue;
+      }
+      if (a.path.length === 0) {
+        const path = findPath(
+          Math.round(a.tileX), Math.round(a.tileY),
+          tx, ty,
+          bridgeTiles, state.occupied
+        );
+        a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
+      }
+      moveAlongPath(a, speed);
+      continue;
+    }
+
+    if (a.state === 'working') {
+      // If this is a gatherer with a gatherResource and no timer, it's a
+      // construction worker sitting at a site — skip the gather logic.
+      if (a.gatherResource && a.assignedBuildingUid > 0 && a.timer !== undefined) {
+        a.timer -= 1;
+        if (a.timer <= 0) {
+          // Finished gathering — put resource in inventory, head to Town Hall.
+          a.inventory = { type: a.gatherResource, amount: 1 };
+          a.carrying = { [a.gatherResource]: 1 };
+          a.state = 'delivering';
+          a.path = [];
+          a.timer = undefined;
+        }
+      }
+      continue;
+    }
+
+    if (a.state === 'delivering') {
+      // Deliver to Town Hall using distance check.
+      const th = findTownHall(state);
+      const thCenter = townHallCenter(state);
+      const dx = thCenter.x - a.tileX;
+      const dy = thCenter.y - a.tileY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      a.phase = (a.phase + speed) % 1;
+      if (dist < TOWN_HALL_DELIVER_RADIUS) {
+        // Drop off resources at Town Hall.
+        if (a.inventory) {
+          state.resources[a.inventory.type] += a.inventory.amount;
+        }
+        if (a.carrying && a.gatherResource) {
+          const amt = a.carrying[a.gatherResource] ?? 0;
+          if (amt > 0) {
+            state.resources[a.gatherResource] += amt;
+          }
+        }
+        a.inventory = undefined;
+        a.carrying = {};
+        a.timer = undefined;
+        // Head back to assigned building for next gather cycle.
+        const b = state.buildings.find((bl) => bl.uid === a.assignedBuildingUid);
+        if (b) {
+          a.state = 'returning_to_hall';
+          a.targetUid = b.uid;
+          a.path = [];
+        } else {
+          a.state = 'returning';
+          a.targetUid = a.homeUid > 0 ? a.homeUid : -1;
+          a.path = [];
+        }
+        continue;
+      }
+      if (a.path.length === 0) {
+        const path = findPath(
+          Math.round(a.tileX), Math.round(a.tileY),
+          Math.round(thCenter.x), Math.round(thCenter.y),
+          bridgeTiles, state.occupied
+        );
+        a.path = path && path.length > 0 ? path : [{ x: thCenter.x, y: thCenter.y }];
+      }
+      moveAlongPath(a, speed);
+      continue;
+    }
+
+    if (a.state === 'returning_to_hall') {
+      // Walk back to assigned building, then go to going_to_work for next cycle.
+      const b = state.buildings.find((bl) => bl.uid === a.targetUid);
+      if (!b) {
+        a.state = 'working';
+        a.path = [];
+        continue;
+      }
+      const tType = BUILDINGS[b.typeId];
+      const tx = b.tileX + tType.size.w / 2;
+      const ty = b.tileY + tType.size.d / 2;
+      const dx = tx - a.tileX;
+      const dy = ty - a.tileY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      a.phase = (a.phase + speed) % 1;
+      if (dist < ARRIVAL_RADIUS) {
+        a.state = 'working';
+        a.path = [];
+        a.timer = 0;
+        // Will be reassigned to going_to_work by assignGatherers next tick.
+        continue;
+      }
+      if (a.path.length === 0) {
+        const path = findPath(
+          Math.round(a.tileX), Math.round(a.tileY),
+          Math.round(tx), Math.round(ty),
+          bridgeTiles, state.occupied
+        );
+        a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
+      }
+      moveAlongPath(a, speed);
+      continue;
+    }
+
+    // --- Legacy gathering states (kept for backwards compat) ---
     if (a.state === 'goingToGather') {
       const tx = a.gatherTargetX;
       const ty = a.gatherTargetY;
@@ -384,43 +557,6 @@ function moveAgents(state: GameState) {
       }
       continue;
     }
-
-    if (a.state === 'delivering') {
-      const target = state.buildings.find((b) => b.uid === a.targetUid);
-      if (!target) { a.state = 'returning'; a.targetUid = a.homeUid > 0 ? a.homeUid : -1; a.path = []; continue; }
-      const tType = BUILDINGS[target.typeId];
-      const tx = target.tileX + tType.size.w / 2;
-      const ty = target.tileY + tType.size.d / 2;
-      const dx = tx - a.tileX;
-      const dy = ty - a.tileY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      a.phase = (a.phase + speed) % 1;
-      if (dist < GATHER_ARRIVAL) {
-        // Deliver resource to warehouse/building, add to stockpile.
-        if (a.carrying && a.gatherResource) {
-          const amt = a.carrying[a.gatherResource] ?? 0;
-          if (amt > 0) {
-            state.resources[a.gatherResource] += amt;
-          }
-        }
-        a.carrying = {};
-        a.state = 'working';
-        a.path = [];
-        continue;
-      }
-      if (a.path.length === 0) {
-        const path = findPath(
-          Math.round(a.tileX), Math.round(a.tileY),
-          Math.round(tx), Math.round(ty),
-          bridgeTiles, state.occupied
-        );
-        a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
-      }
-      moveAlongPath(a, speed);
-      continue;
-    }
-
-    if (a.state === 'working') continue;
 
     // Returning agents head to village center; despawn on arrival.
     if (a.state === 'returning') {
@@ -698,13 +834,13 @@ function applyDailyProduction(state: GameState) {
     }
   }
   const availableWorkers = state.agents.filter(
-    (a) => a.assignedBuildingUid > 0 && (a.state === 'working' || a.state === 'goingToGather' || a.state === 'gathering' || a.state === 'delivering')
+    (a) => a.assignedBuildingUid > 0 && (a.state === 'working' || a.state === 'goingToGather' || a.state === 'gathering' || a.state === 'delivering' || a.state === 'going_to_work' || a.state === 'returning_to_hall')
   ).length;
   const workerRatio = workerDemand === 0 ? 1 : Math.min(1, availableWorkers / workerDemand);
   // Buildings with gatherers produce less abstractly — agents deliver resources physically.
   const gatheringBuildings = new Set(
     state.agents
-      .filter((a) => a.state === 'goingToGather' || a.state === 'gathering' || a.state === 'delivering')
+      .filter((a) => a.state === 'goingToGather' || a.state === 'gathering' || a.state === 'delivering' || a.state === 'going_to_work' || a.state === 'returning_to_hall')
       .map((a) => a.assignedBuildingUid)
   );
   for (const id of RESOURCE_ORDER) {

@@ -318,6 +318,18 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
     waterOnly: true,
     isBridge: true,
   },
+  town_hall: {
+    id: 'town_hall',
+    name: 'Ратуша',
+    description: 'Главное здание. Точка сбора ресурсов. Не требует рабочих.',
+    cost: {},
+    size: { w: 3, d: 3 },
+    color: '#8a6a3a',
+    roof: '#5a3a1a',
+    category: 'civic',
+    buildTicks: 0,
+    level: 1,
+  },
 };
 
 export const BUILD_CATEGORIES: {

@@ -9,7 +9,7 @@ import {
 } from './constants';
 import { tileDecoration, tileHeight, tileToScreen, isWater, hashRand, type CameraView } from './iso';
 import type { GameState } from './engine';
-import type { Agent, BuildingType, PlacedBuilding, Season } from './types';
+import type { Agent, BuildingType, PlacedBuilding, ResourceId, Season } from './types';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;
@@ -116,11 +116,17 @@ function drawAgent(rc: RenderContext, a: Agent, state: GameState) {
   ctx.arc(cx, cy - 11 * z, 3 * z, 0, Math.PI * 2);
   ctx.fill();
 
-  // carrying indicator (small dot above if hauling)
+  // carrying indicator — colored square showing which resource is being hauled
   const carryTotal = Object.values(a.carrying).reduce((s, v) => s + (v ?? 0), 0);
-  if (carryTotal > 0) {
-    ctx.fillStyle = '#a9743b';
+  if (carryTotal > 0 || (a.inventory && a.inventory.amount > 0)) {
+    const resType: ResourceId | null = a.inventory ? a.inventory.type : null;
+    const carryColor = resType ? resourceCarryColor(resType) : '#a9743b';
+    ctx.fillStyle = carryColor;
     ctx.fillRect(cx - 3 * z, cy - 17 * z, 6 * z, 4 * z);
+    // small outline
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 3 * z, cy - 17 * z, 6 * z, 4 * z);
   }
 
   // class ring for non-smerd
@@ -471,5 +477,18 @@ function drawGhost(
       tileDiamondPath(ctx, p.x, p.y - h * view.zoom);
       ctx.stroke();
     }
+  }
+}
+
+function resourceCarryColor(res: ResourceId): string {
+  switch (res) {
+    case 'wood': return '#a9743b';
+    case 'stone': return '#8a8f99';
+    case 'ore': return '#c47a5a';
+    case 'food': return '#7fae5a';
+    case 'skins': return '#b08a55';
+    case 'gold': return '#e3c34a';
+    case 'faith': return '#d8c06a';
+    default: return '#a9743b';
   }
 }

@@ -64,7 +64,8 @@ export type BuildingTypeId =
   | 'palisade'
   | 'school'
   | 'tavern'
-  | 'bridge';
+  | 'bridge'
+  | 'town_hall';
 
 export interface BuildingType {
   id: BuildingTypeId;
@@ -86,6 +87,7 @@ export interface BuildingType {
   guestCapacity?: number; // tavern — houses guests
   waterOnly?: boolean; // bridge — can only be placed on water tiles
   isBridge?: boolean; // render hint
+  level?: number; // upgrade level (future use)
 }
 
 export interface PlacedBuilding {
@@ -98,10 +100,16 @@ export interface PlacedBuilding {
   hasMaster: boolean; // a master is assigned (for requiresMaster buildings)
   storedMaterials: Partial<Record<ResourceId, number>>; // materials delivered to site
   neededMaterials: Partial<Record<ResourceId, number>>; // what's still needed
+  level?: number; // upgrade level
 }
 
 // --- Physical builder agents ---
-export type AgentState = 'idle' | 'toSite' | 'working' | 'returning' | 'goingToGather' | 'gathering' | 'delivering';
+export type AgentState = 'idle' | 'toSite' | 'working' | 'returning' | 'goingToGather' | 'gathering' | 'delivering' | 'going_to_work' | 'returning_to_hall';
+
+export interface AgentInventory {
+  type: ResourceId;
+  amount: number;
+}
 
 export interface Agent {
   uid: number;
@@ -125,6 +133,8 @@ export interface Agent {
   gatherTargetY: number;
   gatherTimer: number; // ticks remaining at gather site
   gatherResource: ResourceId | null; // which resource this agent is gathering
+  inventory?: AgentInventory; // currently held resource being hauled
+  timer?: number; // generic timer for working/delivering phases
 }
 
 // --- Guests (envoys, merchants, refugees) ---
