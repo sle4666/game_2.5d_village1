@@ -8,7 +8,7 @@ import { loadGame } from '@/game/storage';
 export default function App() {
   const [screen, setScreen] = useState<GameScreen>('menu');
   const [difficulty, setDifficulty] = useState<DifficultyId>('normal');
-  const [terrain, setTerrain] = useState<TerrainConfig>({ hills: 0.5, rivers: 0.5 });
+  const [terrain, setTerrain] = useState<TerrainConfig>({ hills: 0.5, rivers: 2 });
   const [loadedState, setLoadedState] = useState<GameState | null>(null);
 
   const handleStart = (d: DifficultyId, t: TerrainConfig) => {

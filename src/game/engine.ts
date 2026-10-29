@@ -26,7 +26,7 @@ import {
   TICKS_PER_DAY,
   isWinter,
 } from './constants';
-import { inBounds, isWater, findPath, collectBridgeTiles, setMapSeed, setTerrainConfig, findNearestDecoration, hashRand } from './iso';
+import { inBounds, isWater, isPassable, findPath, collectBridgeTiles, setMapSeed, setTerrainConfig, findNearestDecoration, hashRand, ROAD_STEP_COST } from './iso';
 
 // Sound event callback — set by GameView to bridge engine -> AudioSystem.
 export type SoundCallback = (event: 'placeBuilding' | 'buildingFinished' | 'winterComes' | 'guestArrives' | 'starvation' | 'trainingComplete') => void;
@@ -38,6 +38,9 @@ function emitSound(event: Parameters<SoundCallback>[0]): void {
 
 export const AGENT_SPEED = 0.5;
 const AGENT_SPEED_WINTER = 0.35;
+const ROAD_SPEED_MULTIPLIER = 2;
+const WAGON_LOAD = 5;
+const BASE_LOAD = 1;
 const GUEST_COOLDOWN_DAYS = 12;
 const ARRIVAL_RADIUS = 0.5;
 
@@ -66,6 +69,7 @@ export interface GameState {
   guestCooldown: number;
   mapSeed: number;
   terrain: TerrainConfig;
+  roads: Set<string>; // tile keys 'x,y'
 }
 
 function emptyGrid<T>(value: T): T[][] {
@@ -93,7 +97,7 @@ export function createGame(
   terrain?: TerrainConfig
 ): GameState {
   const difficulty = DIFFICULTIES[difficultyId as keyof typeof DIFFICULTIES] ?? DIFFICULTIES.normal;
-  const terrainCfg: TerrainConfig = terrain ?? { hills: 0.5, rivers: 0.5 };
+  const terrainCfg: TerrainConfig = terrain ?? { hills: 0.5, rivers: 2 };
   const resources: Record<ResourceId, number> = {
     wood: 0, stone: 0, ore: 0, food: 0, skins: 0, faith: 0, gold: 0, workers: 0,
   };
@@ -137,20 +141,8 @@ export function createGame(
     guestCooldown: 0,
     mapSeed,
     terrain: terrainCfg,
+    roads: new Set<string>(),
   };
-
-  // Auto-place the Town Hall at the center of the map.
-  const townHall = BUILDINGS.town_hall;
-  const thX = Math.floor(GRID_W / 2) - Math.floor(townHall.size.w / 2);
-  const thY = Math.floor(GRID_D / 2) - Math.floor(townHall.size.d / 2);
-  const placed = placeBuildingInternal(state, 'town_hall', thX, thY);
-  if (placed) {
-    placed.built = true;
-    placed.progress = 1;
-    state.log.unshift('Ратуша возведена в центре поселения.');
-    if (state.log.length > 10) state.log.pop();
-    emitSound('buildingFinished');
-  }
 
   return state;
 }
@@ -178,6 +170,20 @@ export function placeBuilding(
   tileY: number
 ): PlacedBuilding | null {
   return placeBuildingInternal(state, typeId, tileX, tileY, true);
+}
+
+export function buildRoad(state: GameState, tileX: number, tileY: number): boolean {
+  if (!inBounds(tileX, tileY)) return false;
+  const key = `${tileX},${tileY}`;
+  if (state.roads.has(key) || state.occupied[tileX][tileY]) return false;
+  const bridgeTiles = collectBridgeTiles(state.buildings.filter((b) => BUILDINGS[b.typeId].isBridge));
+  if (!isPassable(tileX, tileY, bridgeTiles)) return false;
+  const material: ResourceId | null = state.resources.stone >= 1 ? 'stone' : state.resources.wood >= 1 ? 'wood' : null;
+  if (!material) return false;
+  state.resources[material] -= 1;
+  state.roads.add(key);
+  emitSound('placeBuilding');
+  return true;
 }
 
 function placeBuildingInternal(
@@ -319,16 +325,18 @@ function findTownHall(state: GameState): PlacedBuilding | null {
   return state.buildings.find((b) => b.typeId === 'town_hall' && b.built) ?? null;
 }
 
-function townHallCenter(state: GameState): { x: number; y: number } {
+function hasWagonWorkshop(state: GameState): boolean {
+  return state.buildings.some((b) => b.typeId === 'wagon_workshop' && b.built);
+}
+
+function townHallCenter(state: GameState): { x: number; y: number } | null {
   const th = findTownHall(state);
-  if (th) {
-    const t = BUILDINGS.town_hall;
-    return {
-      x: th.tileX + t.size.w / 2,
-      y: th.tileY + t.size.d / 2,
-    };
-  }
-  return { x: GRID_W / 2, y: GRID_D / 2 };
+  if (!th) return null;
+  const t = BUILDINGS.town_hall;
+  return {
+    x: th.tileX + t.size.w / 2,
+    y: th.tileY + t.size.d / 2,
+  };
 }
 
 function assignGatherers(state: GameState) {
@@ -386,7 +394,9 @@ function moveAgents(state: GameState) {
     if (a.state === 'idle') continue;
 
     const winter = isWinter(state.season);
-    const speed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
+    const baseSpeed = winter ? AGENT_SPEED_WINTER : AGENT_SPEED;
+    const onRoad = state.roads.has(`${Math.round(a.tileX)},${Math.round(a.tileY)}`);
+    const speed = onRoad ? baseSpeed * ROAD_SPEED_MULTIPLIER : baseSpeed;
 
     // --- New physical gather loop: going_to_work → working → delivering → returning ---
     if (a.state === 'going_to_work') {
@@ -406,7 +416,7 @@ function moveAgents(state: GameState) {
         const path = findPath(
           Math.round(a.tileX), Math.round(a.tileY),
           tx, ty,
-          bridgeTiles, state.occupied
+          bridgeTiles, state.occupied, state.roads
         );
         a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
       }
@@ -421,8 +431,9 @@ function moveAgents(state: GameState) {
         a.timer -= 1;
         if (a.timer <= 0) {
           // Finished gathering — put resource in inventory, head to Town Hall.
-          a.inventory = { type: a.gatherResource, amount: 1 };
-          a.carrying = { [a.gatherResource]: 1 };
+          const load = hasWagonWorkshop(state) ? WAGON_LOAD : BASE_LOAD;
+          a.inventory = { type: a.gatherResource, amount: load };
+          a.carrying = { [a.gatherResource]: load };
           a.state = 'delivering';
           a.path = [];
           a.timer = undefined;
@@ -433,8 +444,8 @@ function moveAgents(state: GameState) {
 
     if (a.state === 'delivering') {
       // Deliver to Town Hall using distance check.
-      const th = findTownHall(state);
       const thCenter = townHallCenter(state);
+      if (!thCenter) continue;
       const dx = thCenter.x - a.tileX;
       const dy = thCenter.y - a.tileY;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -470,7 +481,7 @@ function moveAgents(state: GameState) {
         const path = findPath(
           Math.round(a.tileX), Math.round(a.tileY),
           Math.round(thCenter.x), Math.round(thCenter.y),
-          bridgeTiles, state.occupied
+          bridgeTiles, state.occupied, state.roads
         );
         a.path = path && path.length > 0 ? path : [{ x: thCenter.x, y: thCenter.y }];
       }
@@ -504,7 +515,7 @@ function moveAgents(state: GameState) {
         const path = findPath(
           Math.round(a.tileX), Math.round(a.tileY),
           Math.round(tx), Math.round(ty),
-          bridgeTiles, state.occupied
+          bridgeTiles, state.occupied, state.roads
         );
         a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
       }
@@ -529,7 +540,7 @@ function moveAgents(state: GameState) {
         const path = findPath(
           Math.round(a.tileX), Math.round(a.tileY),
           tx, ty,
-          bridgeTiles, state.occupied
+          bridgeTiles, state.occupied, state.roads
         );
         a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
       }
@@ -602,7 +613,7 @@ function moveAgents(state: GameState) {
         const path = findPath(
           Math.round(a.tileX), Math.round(a.tileY),
           Math.round(tx), Math.round(ty),
-          bridgeTiles, state.occupied
+          bridgeTiles, state.occupied, state.roads
         );
         a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
       }
@@ -637,7 +648,7 @@ function moveAgents(state: GameState) {
       const path = findPath(
         Math.round(a.tileX), Math.round(a.tileY),
         Math.round(tx), Math.round(ty),
-        bridgeTiles, state.occupied
+        bridgeTiles, state.occupied, state.roads
       );
       a.path = path && path.length > 0 ? path : [{ x: tx, y: ty }];
     }

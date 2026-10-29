@@ -32,7 +32,7 @@ export interface DifficultyConfig {
 // --- Terrain config (set at game creation) ---
 export interface TerrainConfig {
   hills: number; // 0..1
-  rivers: number; // 0..1
+  rivers: number; // number of rivers on the map, 0..5
 }
 
 // --- Society: citizen classes ---
@@ -65,7 +65,11 @@ export type BuildingTypeId =
   | 'school'
   | 'tavern'
   | 'bridge'
-  | 'town_hall';
+  | 'town_hall'
+  | 'wagon_workshop';
+
+// Build mode: placing a building, or laying roads.
+export type BuildMode = BuildingTypeId | 'road';
 
 export interface BuildingType {
   id: BuildingTypeId;

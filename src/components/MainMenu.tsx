@@ -33,7 +33,7 @@ export default function MainMenu({ onStart, onLoad }: MainMenuProps) {
     if (!selected) return;
     onStart(selected, {
       hills: hills / 100,
-      rivers: rivers / 5,
+      rivers,
     });
   };
 

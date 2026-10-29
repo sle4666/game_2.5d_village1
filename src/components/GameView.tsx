@@ -3,11 +3,11 @@ import { Menu, Hammer, Users, Volume2, VolumeX, Mountain, Waves } from 'lucide-r
 import { GRID_D, GRID_W, BUILDINGS, TICK_MS } from '@/game/constants';
 import { screenToTile, tileToScreen, type CameraView } from '@/game/iso';
 import {
-  canPlace, createGame, placeBuilding, tick, seedAgents, startTraining,
+  canPlace, createGame, placeBuilding, buildRoad, tick, seedAgents, startTraining,
   setSoundCallback, type GameState,
 } from '@/game/engine';
 import { render } from '@/game/render';
-import type { CitizenClass, BuildingTypeId, DifficultyId, TerrainConfig } from '@/game/types';
+import type { CitizenClass, BuildMode, DifficultyId, TerrainConfig } from '@/game/types';
 import {
   initAudio, startAmbient, startMusic, switchAmbient, playSound,
   toggleMute, isMuted, type SoundEvent,
@@ -42,7 +42,7 @@ export default function GameView({ difficulty, terrain, onExit, loadedState }: G
   const mouseRef = useRef<{ x: number; y: number; down: boolean; dragStartX: number; dragStartY: number; dragging: boolean }>({
     x: 0, y: 0, down: false, dragStartX: 0, dragStartY: 0, dragging: false,
   });
-  const buildTypeRef = useRef<BuildingTypeId | null>(null);
+  const buildTypeRef = useRef<BuildMode | null>(null);
   const lastSeasonRef = useRef<string>(stateRef.season);
   const [, forceRender] = useState(0);
   const [uiResources, setUiResources] = useState(stateRef.resources);
@@ -57,7 +57,7 @@ export default function GameView({ difficulty, terrain, onExit, loadedState }: G
   const [uiMasterPool, setUiMasterPool] = useState<{ classId: CitizenClass }[]>(stateRef.masterPool);
   const [uiTraining, setUiTraining] = useState(stateRef.training.length);
   const [uiGuests, setUiGuests] = useState(stateRef.guests);
-  const [buildType, setBuildType] = useState<BuildingTypeId | null>(null);
+  const [buildType, setBuildType] = useState<BuildMode | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameOverReason, setGameOverReason] = useState('');
   const [showPause, setShowPause] = useState(false);
@@ -161,7 +161,7 @@ export default function GameView({ difficulty, terrain, onExit, loadedState }: G
         ? { x: t.tileX, y: t.tileY }
         : null;
 
-      const ghostType = buildTypeRef.current ? BUILDINGS[buildTypeRef.current] : null;
+      const ghostType = buildTypeRef.current && buildTypeRef.current !== 'road' ? BUILDINGS[buildTypeRef.current] : null;
       const ghostValid = ghostType && hover
         ? canPlace(s, ghostType, hover.x, hover.y)
         : false;
@@ -292,8 +292,10 @@ export default function GameView({ difficulty, terrain, onExit, loadedState }: G
     const t = screenToTile(mx, my, viewRef.current);
     if (t.tileX < 0 || t.tileY < 0 || t.tileX >= GRID_W || t.tileY >= GRID_D) return;
     const s = stateRef;
-    const placed = placeBuilding(s, bt, t.tileX, t.tileY);
-    if (placed) {
+    const done = bt === 'road'
+      ? buildRoad(s, t.tileX, t.tileY)
+      : placeBuilding(s, bt, t.tileX, t.tileY) !== null;
+    if (done) {
       playSound('placeBuilding');
       syncUi();
     }
@@ -304,7 +306,7 @@ export default function GameView({ difficulty, terrain, onExit, loadedState }: G
     mouseRef.current.dragging = false;
   }, []);
 
-  const selectBuild = useCallback((id: BuildingTypeId | null) => {
+  const selectBuild = useCallback((id: BuildMode | null) => {
     setBuildType(id);
     buildTypeRef.current = id;
   }, []);

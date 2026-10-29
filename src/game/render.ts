@@ -214,6 +214,13 @@ function drawTile(
   tileDiamondPath(ctx, cx, cy);
   ctx.fill();
 
+  // trodden dirt road
+  if (state.roads.has(`${x},${y}`)) {
+    ctx.fillStyle = `rgb(${120 + variance * 16},${104 + variance * 12},${88 + variance * 10})`;
+    tileDiamondPath(ctx, cx, cy);
+    ctx.fill();
+  }
+
   // grid lines
   ctx.strokeStyle = 'rgba(0,0,0,0.08)';
   ctx.lineWidth = 1;

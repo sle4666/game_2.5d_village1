@@ -91,33 +91,36 @@ export function tileHeight(tileX: number, tileY: number): number {
   return Math.max(0, h * 7 * terrainCfg.hills * 2);
 }
 
-// A winding river. Width and waviness scale with rivers config.
-const RIVER_BASE_WIDTH = 4.5;
+// Rivers: terrainCfg.rivers is the number of rivers on the map (0..5).
+const RIVER_WIDTH = 3.5;
+const MAX_RIVERS = 5;
+export const ROAD_STEP_COST = 0.5;
 
-function riverWidth(): number {
-  // rivers=0 → very narrow (1.5), rivers=1 → wide (8), rivers=0.5 → default (4.75)
-  return 1.5 + terrainCfg.rivers * 6.5;
+function riverCount(): number {
+  return Math.min(MAX_RIVERS, Math.max(0, Math.round(terrainCfg.rivers)));
 }
 
-function riverWaviness(): number {
-  // rivers=0 → straight, rivers=1 → very winding
-  return terrainCfg.rivers * 2;
+// Each river gets its own seed-derived offset, so they run through different parts of the map.
+function riverCenterX(tileY: number, index: number): number {
+  const offset = hashRand(index + 1, 17, mapSeed) * GRID_W * 0.6;
+  const base = GRID_W * 0.15 + offset;
+  const phase = mapSeed * 0.3 + index * 2.1;
+  return base + Math.sin((tileY + phase) * 0.18) * 8 + Math.cos((tileY + phase * 0.5) * 0.09) * 5;
 }
 
-export function riverCenterX(tileY: number): number {
-  const base = GRID_W * 0.3 + (mapSeed % (GRID_W * 0.4));
-  const w = riverWaviness();
-  return (
-    base +
-    Math.sin((tileY + mapSeed * 0.3) * 0.18) * 10 * w +
-    Math.cos((tileY + mapSeed * 0.15) * (0.07 + 0.06 * w)) * 6 * w
-  );
+function nearestRiverDistance(tileX: number, tileY: number): number {
+  let best = Infinity;
+  for (let i = 0; i < riverCount(); i++) {
+    best = Math.min(best, Math.abs(tileX - riverCenterX(tileY, i)));
+  }
+  return best;
 }
 
 export function isWater(tileX: number, tileY: number): boolean {
-  const cx = riverCenterX(tileY);
-  const dist = Math.abs(tileX - cx);
-  return dist < riverWidth() / 2;
+  for (let i = 0; i < riverCount(); i++) {
+    if (Math.abs(tileX - riverCenterX(tileY, i)) < RIVER_WIDTH / 2) return true;
+  }
+  return false;
 }
 
 // Trees and rocks: seeded random, clustered near the river and in lowlands.
@@ -129,7 +132,7 @@ export function tileDecoration(tileX: number, tileY: number): 'tree' | 'rock' | 
   if (distFromCenter < 6) return null;
 
   const h = tileHeight(tileX, tileY);
-  const riverDist = Math.abs(tileX - riverCenterX(tileY));
+  const riverDist = nearestRiverDistance(tileX, tileY);
 
   const lowlandBonus = h < 8 ? 0.06 : 0;
   const riverBonus = riverDist < 9 ? 0.05 : 0;
@@ -196,7 +199,8 @@ export function findPath(
   goalX: number,
   goalY: number,
   bridgeTiles: Set<string>,
-  occupied: boolean[][]
+  occupied: boolean[][],
+  roads: Set<string>
 ): { x: number; y: number }[] | null {
   if (!inBounds(startX, startY) || !inBounds(goalX, goalY)) return null;
   const key = (x: number, y: number) => `${x},${y}`;
@@ -238,7 +242,7 @@ export function findPath(
       const isGoal = nx === goalX && ny === goalY;
       if (!isPassable(nx, ny, bridgeTiles)) continue;
       if (!isGoal && occupied[nx] && occupied[nx][ny]) continue;
-      const g = current.g + 1;
+      const g = current.g + (roads.has(nk) ? ROAD_STEP_COST : 1);
       const h = Math.abs(nx - goalX) + Math.abs(ny - goalY);
       const f = g + h;
       open.push({ x: nx, y: ny, g, f, parent: current });

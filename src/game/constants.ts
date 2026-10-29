@@ -327,8 +327,19 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingType> = {
     color: '#8a6a3a',
     roof: '#5a3a1a',
     category: 'civic',
-    buildTicks: 0,
+    buildTicks: 3,
     level: 1,
+  },
+  wagon_workshop: {
+    id: 'wagon_workshop',
+    name: 'Тележная мастерская',
+    description: 'Телеги для Смердов: вместо одной единицы собирают и везут сразу пять.',
+    cost: { wood: 30, stone: 12 },
+    size: { w: 2, d: 2 },
+    color: '#7a5c3a',
+    roof: '#4e3a22',
+    category: 'storage',
+    buildTicks: 8,
   },
 };
 
@@ -343,10 +354,10 @@ export const BUILD_CATEGORIES: {
     name: 'Производство',
     types: ['woodcutter', 'quarry', 'mine', 'huntersHut', 'farm', 'smithy'],
   },
-  { id: 'storage', name: 'Логистика', types: ['warehouse', 'bridge'] },
+  { id: 'storage', name: 'Логистика', types: ['warehouse', 'bridge', 'wagon_workshop'] },
   { id: 'faith', name: 'Религия', types: ['sanctuary'] },
   { id: 'defense', name: 'Защита', types: ['palisade'] },
-  { id: 'civic', name: 'Общество', types: ['school', 'tavern'] },
+  { id: 'civic', name: 'Общество', types: ['town_hall', 'school', 'tavern'] },
 ];
 
 export const SEASON_INFO: Record<
