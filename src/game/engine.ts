@@ -338,6 +338,19 @@ function townHallCenter(state: GameState): { x: number; y: number } | null {
   };
 }
 
+// Nearest resource tile to a building: searches nearby first, then the whole map.
+function findNearestResource(
+  state: GameState,
+  startX: number,
+  startY: number,
+  type: 'tree' | 'rock'
+): { x: number; y: number } | null {
+  return (
+    findNearestDecoration(startX, startY, type, GATHER_RADIUS, state.mapSeed, state.decorations) ??
+    findNearestDecoration(startX, startY, type, Math.max(GRID_W, GRID_D), state.mapSeed, state.decorations)
+  );
+}
+
 function assignGatherers(state: GameState) {
   for (const b of state.buildings) {
     if (!b.built) continue;
@@ -354,9 +367,7 @@ function assignGatherers(state: GameState) {
     );
     if (!worker) continue;
     // Find nearest decoration tile.
-    const target = findNearestDecoration(
-      b.tileX, b.tileY, gatherType, GATHER_RADIUS, state.mapSeed, state.decorations
-    );
+    const target = findNearestResource(state, b.tileX, b.tileY, gatherType);
     if (!target) continue;
     worker.state = 'going_to_work';
     worker.gatherTargetX = target.x;
