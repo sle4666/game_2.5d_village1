@@ -92,33 +92,61 @@ export function tileHeight(tileX: number, tileY: number): number {
 }
 
 // Rivers: terrainCfg.rivers is the number of rivers on the map (0..5).
-const RIVER_WIDTH = 3.5;
 const MAX_RIVERS = 5;
+const RIVER_MAX_LATERAL = GRID_W * 0.25;
 export const ROAD_STEP_COST = 0.5;
 
 function riverCount(): number {
   return Math.min(MAX_RIVERS, Math.max(0, Math.round(terrainCfg.rivers)));
 }
 
-// Each river gets its own seed-derived offset, so they run through different parts of the map.
-function riverCenterX(tileY: number, index: number): number {
-  const offset = hashRand(index + 1, 17, mapSeed) * GRID_W * 0.6;
-  const base = GRID_W * 0.15 + offset;
-  const phase = mapSeed * 0.3 + index * 2.1;
-  return base + Math.sin((tileY + phase) * 0.18) * 8 + Math.cos((tileY + phase * 0.5) * 0.09) * 5;
+interface RiverShape {
+  cos: number;
+  sin: number;
+  freq: number;
+  phase: number;
+  amplitude: number;
+  lateral: number;
+  halfWidth: number;
+}
+
+// Every river gets its own seed-derived direction, meander and width.
+function riverShape(index: number): RiverShape {
+  const salt = index + 1;
+  const angle = hashRand(salt, 17, mapSeed) * Math.PI;
+  return {
+    cos: Math.cos(angle),
+    sin: Math.sin(angle),
+    freq: 0.12 + hashRand(salt, 29, mapSeed) * 0.1,
+    phase: hashRand(salt, 43, mapSeed) * Math.PI * 2,
+    amplitude: 3 + hashRand(salt, 57, mapSeed) * 6,
+    lateral: (hashRand(salt, 71, mapSeed) - 0.5) * 2 * RIVER_MAX_LATERAL,
+    halfWidth: (2.5 + hashRand(salt, 83, mapSeed) * 2) / 2,
+  };
+}
+
+// Signed distance from the river centerline, measured in the river's rotated frame.
+function riverDeviation(tileX: number, tileY: number, r: RiverShape): number {
+  const dx = tileX - GRID_W / 2;
+  const dy = tileY - GRID_D / 2;
+  const rotatedX = dx * r.cos - dy * r.sin;
+  const rotatedY = dx * r.sin + dy * r.cos;
+  const wave = Math.sin(rotatedX * r.freq + r.phase) * r.amplitude;
+  return rotatedY - wave - r.lateral;
 }
 
 function nearestRiverDistance(tileX: number, tileY: number): number {
   let best = Infinity;
   for (let i = 0; i < riverCount(); i++) {
-    best = Math.min(best, Math.abs(tileX - riverCenterX(tileY, i)));
+    best = Math.min(best, Math.abs(riverDeviation(tileX, tileY, riverShape(i))));
   }
   return best;
 }
 
 export function isWater(tileX: number, tileY: number): boolean {
   for (let i = 0; i < riverCount(); i++) {
-    if (Math.abs(tileX - riverCenterX(tileY, i)) < RIVER_WIDTH / 2) return true;
+    const r = riverShape(i);
+    if (Math.abs(riverDeviation(tileX, tileY, r)) < r.halfWidth) return true;
   }
   return false;
 }

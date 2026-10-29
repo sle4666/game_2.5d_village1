@@ -182,7 +182,6 @@ export function buildRoad(state: GameState, tileX: number, tileY: number): boole
   if (!material) return false;
   state.resources[material] -= 1;
   state.roads.add(key);
-  emitSound('placeBuilding');
   return true;
 }
 
